@@ -1,0 +1,19 @@
+Missing `tsconfig.node.json`! That file is referenced in `tsconfig.json` but wasn't added to the repo.
+
+Go to `always-best-care-provider` on GitHub and create a new file called `tsconfig.node.json` with this content:
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strictNullChecks": false
+  },
+  "include": ["vite.config.ts"]
+}
+```
+
+Click **Commit changes**, then go back to Hostinger and retry the build.
