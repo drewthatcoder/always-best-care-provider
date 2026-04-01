@@ -162,14 +162,14 @@ const Register = () => {
 
   const handleNext = () => {
     if (currentStep === 1) {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
-      toast.error('Please fill in all required fields.');
-      return;
-    }
-    if (!formData.paymentPlan) {
-      toast.error('Please select a payment plan.');
-      return;
-    }
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
+        toast.error('Please fill in all required fields.');
+        return;
+      }
+      if (!formData.paymentPlan) {
+        toast.error('Please select a payment plan.');
+        return;
+      }
     }
     setCurrentStep((s) => s + 1);
   };
@@ -195,6 +195,7 @@ const Register = () => {
 
     setLoading(true);
     try {
+      // 1. Create auth user
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -213,40 +214,54 @@ const Register = () => {
       }
 
       if (data.user) {
-        // Use edge function with service role to save data (no authenticated session yet)
-        const { error: fnError } = await supabase.functions.invoke('submit-provider-application', {
-          body: {
-            user_id: data.user.id,
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            email: formData.email,
-            phone: formData.phone,
-            adba: formData.adba,
-            address: formData.address,
-            city: formData.city,
-            state: formData.state,
-            zip_code: formData.zipCode,
-            payment_option: formData.paymentOption,
-            payment_plan: formData.paymentPlan,
-            selected_services: formData.selectedServices,
-            service_zip_codes: formData.serviceZipCodes,
-            available_days: formData.availableDays,
-            available_shifts: formData.availableShifts,
-            additional_info: formData.additionalInfo,
-          },
-        });
+        // 2. Save provider application directly to Supabase
+        const { error: appError } = await supabase.from('provider_applications').insert({
+          user_id: data.user.id,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          adba: formData.adba,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          zip_code: formData.zipCode,
+          payment_option: formData.paymentOption,
+          payment_plan: formData.paymentPlan,
+          selected_services: formData.selectedServices,
+          service_zip_codes: formData.serviceZipCodes,
+          available_days: formData.availableDays,
+          available_shifts: formData.availableShifts,
+          additional_info: formData.additionalInfo,
+          status: 'pending',
+        } as any);
 
-        if (fnError) {
-          console.error('Application submission error:', fnError);
-          toast.error('Account created but application submission failed. Please contact support.');
-          setTimeout(() => navigate('/login'), 2000);
+        if (appError) {
+          console.error('Application insert error:', appError);
+          toast.error('Account created but application submission failed: ' + appError.message);
           return;
         }
+
+        // 3. Save service zip codes
+        if (formData.serviceZipCodes.length > 0) {
+          const zipRows = formData.serviceZipCodes.map(zip => ({
+            user_id: data.user!.id,
+            zip_code: zip,
+          }));
+          await supabase.from('provider_zip_codes').insert(zipRows as any);
+        }
+
+        // 4. Save profile
+        await supabase.from('profiles').upsert({
+          user_id: data.user.id,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          zip_code: formData.zipCode,
+        } as any);
       }
 
       toast.success('Account created! Please check your email to verify your account.');
       setCurrentStep(totalSteps + 1);
-      return;
     } catch {
       toast.error('An unexpected error occurred.');
     } finally {
@@ -288,7 +303,7 @@ const Register = () => {
             </Button>
             {currentStep < totalSteps ? (
               <Button onClick={handleNext} className="flex-1">
-                Submit <ArrowRight className="w-4 h-4 ml-1" />
+                Next <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             ) : (
               <Button onClick={handleSubmit} disabled={loading} className="flex-1">
@@ -521,7 +536,6 @@ const StepPersonalInfo = ({
     </div>
   </div>
 );
-
 
 /* ─── Step 2: Account Creation ─── */
 const StepAccount = ({
