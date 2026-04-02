@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Clock, LogOut } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import JobCard, { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
@@ -8,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 
 const ProviderDashboard = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -18,53 +20,32 @@ const ProviderDashboard = () => {
 
   useEffect(() => {
     const checkApplicationStatus = async () => {
-      if (!user) {
-        setCheckingStatus(false);
-        return;
-      }
-
+      if (!user) { setCheckingStatus(false); return; }
       const { data, error } = await supabase
         .from('provider_applications')
         .select('status')
         .eq('user_id', user.id)
         .maybeSingle();
-
-      if (!error && data) {
-        setApplicationStatus(data.status);
-      }
+      if (!error && data) setApplicationStatus(data.status);
       setCheckingStatus(false);
     };
-
     checkApplicationStatus();
   }, [user]);
 
   useEffect(() => {
     if (!user || checkingStatus) return;
-    if (applicationStatus && applicationStatus !== 'approved') {
-      setLoadingJobs(false);
-      return;
-    }
+    if (applicationStatus && applicationStatus !== 'approved') { setLoadingJobs(false); return; }
 
     const fetchJobs = async () => {
       setLoadingJobs(true);
-
       const { data: bookings, error } = await supabase
         .from('bookings' as any)
         .select('*')
         .in('status', ['upcoming', 'in-progress', 'confirmed'])
         .order('scheduled_date', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching bookings:', error);
-        setLoadingJobs(false);
-        return;
-      }
-
-      if (!bookings || bookings.length === 0) {
-        setJobs([]);
-        setLoadingJobs(false);
-        return;
-      }
+      if (error) { console.error('Error fetching bookings:', error); setLoadingJobs(false); return; }
+      if (!bookings || bookings.length === 0) { setJobs([]); setLoadingJobs(false); return; }
 
       const clientIds = [...new Set((bookings as any[]).map((b: any) => b.client_user_id))];
       const { data: profiles } = await supabase
@@ -73,9 +54,7 @@ const ProviderDashboard = () => {
         .in('user_id', clientIds);
 
       const profileMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
-      (profiles || []).forEach((p: any) => {
-        profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name };
-      });
+      (profiles || []).forEach((p: any) => { profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name }; });
 
       const mapped: Job[] = (bookings as any[]).map((b: any) => {
         const profile = profileMap[b.client_user_id];
@@ -118,11 +97,15 @@ const ProviderDashboard = () => {
   const handleJobClick = async (job: Job) => {
     setSelectedJob(job);
     setSheetOpen(true);
-
     if (!job.providerViewed) {
       await supabase.from('bookings' as any).update({ provider_viewed: true }).eq('id', job.id);
       setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, providerViewed: true } : j)));
     }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/provider-login');
   };
 
   if (checkingStatus) {
@@ -137,8 +120,11 @@ const ProviderDashboard = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <header className="care-gradient safe-area-top">
-          <div className="max-w-md mx-auto px-6 py-6">
+          <div className="max-w-md mx-auto px-6 py-6 flex items-center justify-between">
             <h1 className="text-xl font-bold text-primary-foreground">Application Status</h1>
+            <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-3 py-2 rounded-lg transition-colors">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
           </div>
         </header>
         <div className="flex-1 flex items-center justify-center px-6">
@@ -171,7 +157,16 @@ const ProviderDashboard = () => {
   return (
     <div className="min-h-screen bg-background pb-20">
       <div className="care-gradient pt-12 pb-6 px-6">
-        <h1 className="text-xl font-semibold text-white text-center">My Jobs</h1>
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
+          <h1 className="text-xl font-semibold text-white">My Jobs</h1>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 text-sm font-medium bg-white/15 hover:bg-white/25 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Logout
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-6">
