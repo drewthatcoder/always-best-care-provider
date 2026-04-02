@@ -100,13 +100,13 @@ const ProviderLogin = () => {
         {/* Forgot Password */}
         <div className="text-center space-y-2">
           <a
-            href="mailto:support@easycare.live?subject=Password Reset Request&body=Please reset the password for my provider account. My email is: "
+            href="mailto:techsupport@cityoftreestech.com?subject=Password Reset Request&body=Please reset the password for my provider account. My email is: "
             className="text-white/80 hover:text-white text-sm font-medium block"
           >
             Forgot your password?
           </a>
           <p className="text-white/50 text-xs">
-            Contact us at support@easycare.live and we'll reset it within 24 hours.
+            Contact us at techsupport@cityoftreestech.com and we'll reset it within 24 hours.
           </p>
         </div>
 
