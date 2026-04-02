@@ -7,7 +7,6 @@ import Logo from '@/components/Logo';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { isNativePlatform } from '@/hooks/usePlatform';
-
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -15,14 +14,12 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const isNative = isNativePlatform();
-
   // On web, redirect away from login to signup
   useEffect(() => {
     if (!isNative) {
       navigate('/signup', { replace: true });
     }
   }, [isNative, navigate]);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -34,7 +31,6 @@ const Login = () => {
       navigate('/dashboard');
     }
   };
-
   return (
     <div className="min-h-screen care-gradient flex flex-col items-center justify-center p-6 safe-area-top safe-area-bottom">
       <div className="mb-8">
@@ -78,19 +74,11 @@ const Login = () => {
         >
           {loading ? 'Logging in...' : 'Login'}
         </Button>
-
-        <div className="text-center space-y-3">
-          <a
-            href="mailto:support@easycare.live?subject=Password Reset Request&body=Please reset the password for my account. My email is: "
-            className="text-white hover:text-white/80 text-sm font-medium block"
-          >
-            Forgot Password? Contact Support
-          </a>
-          <p className="text-white/60 text-xs">
-            Email us at support@easycare.live and we'll reset it for you within 24 hours.
-          </p>
+        <div className="text-center">
+          <button type="button" className="text-white hover:text-white/80 text-sm font-medium">
+            Reset Password
+          </button>
         </div>
-
         <p className="text-center text-care-orange text-sm">
           First time logging in? Please try your email address as your password!
         </p>
@@ -98,5 +86,4 @@ const Login = () => {
     </div>
   );
 };
-
 export default Login;
