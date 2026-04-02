@@ -17,42 +17,36 @@ const ProviderLogin = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setLoading(false);
       toast.error(error.message);
       return;
     }
-
     // Check that this user has a provider application
     const { data: application } = await supabase
       .from('provider_applications')
       .select('status')
       .eq('user_id', data.user.id)
       .maybeSingle();
-
     if (!application) {
       await supabase.auth.signOut();
       setLoading(false);
       toast.error('No provider application found. Please register first.');
       return;
     }
-
     if (application.status === 'pending') {
       await supabase.auth.signOut();
       setLoading(false);
       toast.error('Your application is still under review. You will be notified once approved.');
       return;
     }
-
     if (application.status === 'rejected') {
       await supabase.auth.signOut();
       setLoading(false);
       toast.error('Your application has been rejected. Please contact support for more information.');
       return;
     }
-
     setLoading(false);
     navigate('/provider-dashboard');
   };
@@ -62,9 +56,7 @@ const ProviderLogin = () => {
       <div className="mb-8">
         <Logo size="lg" variant="light" />
       </div>
-
       <h1 className="text-2xl font-bold text-white mb-8 tracking-wide">PROVIDER LOGIN</h1>
-
       <form onSubmit={handleLogin} className="w-full max-w-sm space-y-6">
         <div>
           <label className="block text-white/80 text-sm mb-2 uppercase tracking-wide">Email</label>
@@ -77,7 +69,6 @@ const ProviderLogin = () => {
             required
           />
         </div>
-
         <div>
           <label className="block text-white/80 text-sm mb-2 uppercase tracking-wide">Password</label>
           <div className="relative">
@@ -98,7 +89,6 @@ const ProviderLogin = () => {
             </button>
           </div>
         </div>
-
         <Button
           type="submit"
           disabled={loading}
@@ -106,6 +96,19 @@ const ProviderLogin = () => {
         >
           {loading ? 'Logging in...' : 'Login'}
         </Button>
+
+        {/* Forgot Password */}
+        <div className="text-center space-y-2">
+          <a
+            href="mailto:support@easycare.live?subject=Password Reset Request&body=Please reset the password for my provider account. My email is: "
+            className="text-white/80 hover:text-white text-sm font-medium block"
+          >
+            Forgot your password?
+          </a>
+          <p className="text-white/50 text-xs">
+            Contact us at support@easycare.live and we'll reset it within 24 hours.
+          </p>
+        </div>
 
         <p className="text-center text-white/70 text-sm">
           Don't have an account?{' '}
