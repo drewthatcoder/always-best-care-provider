@@ -18,8 +18,8 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_51TBfSlCv6ZSrYUtDaodmtphvZgyWIhl3BesDnis33S8MEXAZ0TIWhrA81PWrsLs7f6VxQ2Y96OzhtEM6ObW5lt4l00JkNr2bWe');
 
 const PRICE_IDS = {
-  monthly:   'price_1TEIrfCv6ZSrYUtDsndS9YWK',
-  'monthly-2': 'price_1TEIoiCv6ZSrYUtDaBnOm3tf',
+  monthly:   'price_1TIBHpCv6ZSrYUtDLRps2vzO',
+  'monthly-2': 'price_1TIBInCv6ZSrYUtDnnotfVFQ',
 };
 
 interface ProviderFormData {
