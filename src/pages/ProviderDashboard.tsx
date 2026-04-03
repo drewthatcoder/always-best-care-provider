@@ -105,7 +105,7 @@ const ProviderDashboard = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/provider-login');
+    navigate('/');
   };
 
   if (checkingStatus) {
