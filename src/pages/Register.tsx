@@ -15,12 +15,17 @@ import { toast } from 'sonner';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_51TBfSlCv6ZSrYUtDaodmtphvZgyWIhl3BesDnis33S8MEXAZ0TIWhrA81PWrsLs7f6VxQ2Y96OzhtEM6ObW5lt4l00JkNr2bWe');
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+  'pk_test_51TBfSlCv6ZSrYUtDaodmtphvZgyWIhl3BesDnis33S8MEXAZ0TIWhrA81PWrsLs7f6VxQ2Y96OzhtEM6ObW5lt4l00JkNr2bWe'
+);
 
 const PRICE_IDS = {
-  monthly:   'price_1TIBHpCv6ZSrYUtDLRps2vzO',
+  monthly:     'price_1TIBHpCv6ZSrYUtDLRps2vzO',
   'monthly-2': 'price_1TIBInCv6ZSrYUtDnnotfVFQ',
 };
+
+const ONBOARDING_PRICE_ID = 'price_1TEIsOCv6ZSrYUtD73YcE4ZS';
 
 interface ProviderFormData {
   businessName: string;
@@ -85,7 +90,7 @@ const US_STATES = [
   'VA','WA','WV','WI','WY',
 ];
 
-// ── Inner form that uses Stripe hooks ─────────────────────────────────────────
+// ── Inner form ────────────────────────────────────────────────────────────────
 const RegisterForm = () => {
   const navigate = useNavigate();
   const stripe = useStripe();
@@ -148,49 +153,42 @@ const RegisterForm = () => {
     else navigate('/');
   };
 
- import Stripe from "https://esm.sh/stripe@13.3.0";
+  const handleSubmit = async () => {
+    if (!stripe || !elements) { toast.error('Stripe not loaded. Please refresh.'); return; }
+    if (!formData.password || formData.password.length < 6) { toast.error('Password must be at least 6 characters.'); return; }
+    if (formData.password !== formData.confirmPassword) { toast.error('Passwords do not match.'); return; }
+    if (!formData.agreeTerms) { toast.error('Please agree to the Terms of Service.'); return; }
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
-  apiVersion: "2023-10-16",
-});
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) { toast.error('Please enter your card details.'); return; }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const { email, name, paymentMethodId } = await req.json();
-
-  const customer = await stripe.customers.create({
-    email,
-    name,
-    payment_method: paymentMethodId,
-    invoice_settings: { default_payment_method: paymentMethodId },
-  });
-
-  return new Response(
-    JSON.stringify({ customerId: customer.id }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-});
-
+    setLoading(true);
+    try {
+      // 1. Create payment method
+      const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+        type: 'card',
+        card: cardElement,
+        billing_details: {
+          name: `${formData.firstName} ${formData.lastName}`,
+          email: formData.email,
+        },
+      });
       if (pmError) { toast.error(pmError.message || 'Card error'); setLoading(false); return; }
 
-      // 2. Create Stripe customer
+      // 2. Create Stripe customer with payment method attached
       const { data: customerData, error: customerError } = await supabase.functions.invoke('create-customer', {
-        body: { email: formData.email, name: `${formData.firstName} ${formData.lastName}` },
+        body: {
+          email: formData.email,
+          name: `${formData.firstName} ${formData.lastName}`,
+          paymentMethodId: paymentMethod!.id,
+        },
       });
       if (customerError || !customerData?.customerId) { toast.error('Failed to create customer'); setLoading(false); return; }
       const customerId = customerData.customerId;
 
       // 3. Charge $299 onboarding fee
       const { data: piData, error: piError } = await supabase.functions.invoke('create-payment-intent', {
-        body: { customerId, priceId: 'price_1TEIsOCv6ZSrYUtD73YcE4ZS' },
+        body: { customerId, priceId: ONBOARDING_PRICE_ID, paymentMethodId: paymentMethod!.id },
       });
       if (piError || !piData?.clientSecret) { toast.error('Failed to create payment'); setLoading(false); return; }
 
@@ -202,7 +200,7 @@ Deno.serve(async (req: Request) => {
       // 4. Create monthly subscription
       const priceId = PRICE_IDS[formData.paymentPlan as keyof typeof PRICE_IDS];
       const { data: subData, error: subError } = await supabase.functions.invoke('create-subscription', {
-        body: { customerId, priceId },
+        body: { customerId, priceId, paymentMethodId: paymentMethod!.id },
       });
       if (subError || !subData?.clientSecret) { toast.error('Failed to create subscription'); setLoading(false); return; }
 
@@ -223,7 +221,6 @@ Deno.serve(async (req: Request) => {
       if (error) { toast.error(error.message); setLoading(false); return; }
 
       if (data.user) {
-        // 6. Save provider application
         await supabase.from('provider_applications').insert({
           user_id: data.user.id,
           first_name: formData.firstName,
@@ -246,14 +243,12 @@ Deno.serve(async (req: Request) => {
           stripe_customer_id: customerId,
         } as any);
 
-        // 7. Save zip codes
         if (formData.serviceZipCodes.length > 0) {
           await supabase.from('provider_zip_codes').insert(
             formData.serviceZipCodes.map(zip => ({ user_id: data.user!.id, zip_code: zip })) as any
           );
         }
 
-        // 8. Save profile
         await supabase.from('profiles').upsert({
           user_id: data.user.id,
           first_name: formData.firstName,
@@ -273,7 +268,6 @@ Deno.serve(async (req: Request) => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <div className="care-gradient safe-area-top">
         <div className="max-w-2xl mx-auto px-6 py-6">
           <div className="flex items-center gap-4 mb-6">
@@ -323,7 +317,7 @@ Deno.serve(async (req: Request) => {
   );
 };
 
-// ── Step 1: Personal Info ─────────────────────────────────────────────────────
+// ── Step 1 ────────────────────────────────────────────────────────────────────
 const StepPersonalInfo = ({
   formData, update, addZipCode, removeZipCode, csvInputRef, onCsvUpload,
 }: {
@@ -471,7 +465,7 @@ const StepPersonalInfo = ({
   </div>
 );
 
-// ── Step 2: Account + Payment ─────────────────────────────────────────────────
+// ── Step 2 ────────────────────────────────────────────────────────────────────
 const StepAccount = ({
   formData, update,
 }: {
@@ -506,7 +500,6 @@ const StepAccount = ({
       <Textarea id="additionalInfo" value={formData.additionalInfo} onChange={(e) => update('additionalInfo', e.target.value)} rows={3} />
     </div>
 
-    {/* Stripe Card Element */}
     <div className="space-y-2">
       <Label className="flex items-center gap-2">
         <Lock className="w-4 h-4 text-muted-foreground" />
@@ -542,7 +535,7 @@ const StepAccount = ({
   </div>
 );
 
-// ── Step 3: Confirmation ──────────────────────────────────────────────────────
+// ── Step 3 ────────────────────────────────────────────────────────────────────
 const StepConfirmation = () => {
   const navigate = useNavigate();
   return (
