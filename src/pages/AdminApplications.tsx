@@ -81,7 +81,7 @@ const AdminApplications = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/admin-login');
+   navigate('/');
   };
 
   const updateStatus = async (id: string, status: string) => {
