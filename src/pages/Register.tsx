@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, CheckCircle2, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Upload, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,9 +10,17 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import Logo from '@/components/Logo';
 import ProgressBar from '@/components/ProgressBar';
-import ServiceCard, { AVAILABLE_SERVICES } from '@/components/ServiceCard';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_51TBfSlCv6ZSrYUtDaodmtphvZgyWIhl3BesDnis33S8MEXAZ0TIWhrA81PWrsLs7f6VxQ2Y96OzhtEM6ObW5lt4l00JkNr2bWe');
+
+const PRICE_IDS = {
+  monthly:   'price_1TEIrfCv6ZSrYUtDsndS9YWK',
+  'monthly-2': 'price_1TEIoiCv6ZSrYUtDaBnOm3tf',
+};
 
 interface ProviderFormData {
   businessName: string;
@@ -22,13 +30,6 @@ interface ProviderFormData {
   email: string;
   phone: string;
   paymentOption: string;
-  cardNumber: string;
-  cardExpiry: string;
-  cardCvv: string;
-  cardName: string;
-  achRoutingNumber: string;
-  achAccountNumber: string;
-  achAccountName: string;
   secondUserName: string;
   secondUserEmail: string;
   secondUserPassword: string;
@@ -56,14 +57,7 @@ const initialFormData: ProviderFormData = {
   lastName: '',
   email: '',
   phone: '',
-  paymentOption: '',
-  cardNumber: '',
-  cardExpiry: '',
-  cardCvv: '',
-  cardName: '',
-  achRoutingNumber: '',
-  achAccountNumber: '',
-  achAccountName: '',
+  paymentOption: 'card',
   secondUserName: '',
   secondUserEmail: '',
   secondUserPassword: '',
@@ -84,13 +78,6 @@ const initialFormData: ProviderFormData = {
   additionalInfo: '',
 };
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const SHIFTS = [
-  { id: 'morning', label: 'Morning (7 AM – 12 PM)' },
-  { id: 'afternoon', label: 'Afternoon (12 PM – 5 PM)' },
-  { id: 'evening', label: 'Evening (5 PM – 10 PM)' },
-];
-
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
   'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
@@ -98,8 +85,11 @@ const US_STATES = [
   'VA','WA','WV','WI','WY',
 ];
 
-const Register = () => {
+// ── Inner form that uses Stripe hooks ─────────────────────────────────────────
+const RegisterForm = () => {
   const navigate = useNavigate();
+  const stripe = useStripe();
+  const elements = useElements();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<ProviderFormData>(initialFormData);
   const [loading, setLoading] = useState(false);
@@ -108,30 +98,15 @@ const Register = () => {
   const update = (field: keyof ProviderFormData, value: any) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-  const toggleArray = (field: 'selectedServices' | 'availableDays' | 'availableShifts', item: string) =>
-    setFormData((prev) => ({
-      ...prev,
-      [field]: prev[field].includes(item)
-        ? prev[field].filter((i) => i !== item)
-        : [...prev[field], item],
-    }));
-
   const addZipCode = () => {
     const zip = formData.newZipCode.trim();
     if (zip && /^\d{5}$/.test(zip) && !formData.serviceZipCodes.includes(zip)) {
-      setFormData((prev) => ({
-        ...prev,
-        serviceZipCodes: [...prev.serviceZipCodes, zip],
-        newZipCode: '',
-      }));
+      setFormData((prev) => ({ ...prev, serviceZipCodes: [...prev.serviceZipCodes, zip], newZipCode: '' }));
     }
   };
 
   const removeZipCode = (zip: string) =>
-    setFormData((prev) => ({
-      ...prev,
-      serviceZipCodes: prev.serviceZipCodes.filter((z) => z !== zip),
-    }));
+    setFormData((prev) => ({ ...prev, serviceZipCodes: prev.serviceZipCodes.filter((z) => z !== zip) }));
 
   const csvInputRef = useRef<HTMLInputElement>(null);
 
@@ -141,15 +116,9 @@ const Register = () => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
-      const parsed = text
-        .split(/[\n,\r]+/)
-        .map((v) => v.trim().replace(/^"|"$/g, ''))
-        .filter((v) => /^\d{5}$/.test(v));
+      const parsed = text.split(/[\n,\r]+/).map((v) => v.trim().replace(/^"|"$/g, '')).filter((v) => /^\d{5}$/.test(v));
       const unique = [...new Set(parsed)];
-      if (unique.length === 0) {
-        toast.error('No valid 5-digit zip codes found in CSV');
-        return;
-      }
+      if (unique.length === 0) { toast.error('No valid 5-digit zip codes found in CSV'); return; }
       setFormData((prev) => {
         const added = unique.filter((z) => !prev.serviceZipCodes.includes(z));
         toast.success(`${added.length} zip code${added.length !== 1 ? 's' : ''} added from CSV`);
@@ -180,42 +149,72 @@ const Register = () => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.password || formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters.');
-      return;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match.');
-      return;
-    }
-    if (!formData.agreeTerms) {
-      toast.error('Please agree to the Terms of Service.');
-      return;
-    }
+    if (!stripe || !elements) { toast.error('Stripe not loaded. Please refresh.'); return; }
+    if (!formData.password || formData.password.length < 6) { toast.error('Password must be at least 6 characters.'); return; }
+    if (formData.password !== formData.confirmPassword) { toast.error('Passwords do not match.'); return; }
+    if (!formData.agreeTerms) { toast.error('Please agree to the Terms of Service.'); return; }
+
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) { toast.error('Please enter your card details.'); return; }
 
     setLoading(true);
     try {
-      // 1. Create auth user
+      // 1. Create payment method from card element
+      const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+        type: 'card',
+        card: cardElement,
+        billing_details: {
+          name: `${formData.firstName} ${formData.lastName}`,
+          email: formData.email,
+        },
+      });
+
+      if (pmError) { toast.error(pmError.message || 'Card error'); setLoading(false); return; }
+
+      // 2. Create Stripe customer
+      const { data: customerData, error: customerError } = await supabase.functions.invoke('create-customer', {
+        body: { email: formData.email, name: `${formData.firstName} ${formData.lastName}` },
+      });
+      if (customerError || !customerData?.customerId) { toast.error('Failed to create customer'); setLoading(false); return; }
+      const customerId = customerData.customerId;
+
+      // 3. Charge $299 onboarding fee
+      const { data: piData, error: piError } = await supabase.functions.invoke('create-payment-intent', {
+        body: { customerId, priceId: 'price_1TEIsOCv6ZSrYUtD73YcE4ZS' },
+      });
+      if (piError || !piData?.clientSecret) { toast.error('Failed to create payment'); setLoading(false); return; }
+
+      const { error: confirmError } = await stripe.confirmCardPayment(piData.clientSecret, {
+        payment_method: paymentMethod!.id,
+      });
+      if (confirmError) { toast.error(confirmError.message || 'Payment failed'); setLoading(false); return; }
+
+      // 4. Create monthly subscription
+      const priceId = PRICE_IDS[formData.paymentPlan as keyof typeof PRICE_IDS];
+      const { data: subData, error: subError } = await supabase.functions.invoke('create-subscription', {
+        body: { customerId, priceId },
+      });
+      if (subError || !subData?.clientSecret) { toast.error('Failed to create subscription'); setLoading(false); return; }
+
+      const { error: subConfirmError } = await stripe.confirmCardPayment(subData.clientSecret, {
+        payment_method: paymentMethod!.id,
+      });
+      if (subConfirmError) { toast.error(subConfirmError.message || 'Subscription payment failed'); setLoading(false); return; }
+
+      // 5. Create auth user
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
-          data: {
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-          },
+          data: { first_name: formData.firstName, last_name: formData.lastName },
           emailRedirectTo: window.location.origin,
         },
       });
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
+      if (error) { toast.error(error.message); setLoading(false); return; }
 
       if (data.user) {
-        // 2. Save provider application directly to Supabase
-        const { error: appError } = await supabase.from('provider_applications').insert({
+        // 6. Save provider application
+        await supabase.from('provider_applications').insert({
           user_id: data.user.id,
           first_name: formData.firstName,
           last_name: formData.lastName,
@@ -234,24 +233,17 @@ const Register = () => {
           available_shifts: formData.availableShifts,
           additional_info: formData.additionalInfo,
           status: 'pending',
+          stripe_customer_id: customerId,
         } as any);
 
-        if (appError) {
-          console.error('Application insert error:', appError);
-          toast.error('Account created but application submission failed: ' + appError.message);
-          return;
-        }
-
-        // 3. Save service zip codes
+        // 7. Save zip codes
         if (formData.serviceZipCodes.length > 0) {
-          const zipRows = formData.serviceZipCodes.map(zip => ({
-            user_id: data.user!.id,
-            zip_code: zip,
-          }));
-          await supabase.from('provider_zip_codes').insert(zipRows as any);
+          await supabase.from('provider_zip_codes').insert(
+            formData.serviceZipCodes.map(zip => ({ user_id: data.user!.id, zip_code: zip })) as any
+          );
         }
 
-        // 4. Save profile
+        // 8. Save profile
         await supabase.from('profiles').upsert({
           user_id: data.user.id,
           first_name: formData.firstName,
@@ -262,8 +254,8 @@ const Register = () => {
 
       toast.success('Account created! Please check your email to verify your account.');
       setCurrentStep(totalSteps + 1);
-    } catch {
-      toast.error('An unexpected error occurred.');
+    } catch (err: any) {
+      toast.error(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -281,33 +273,37 @@ const Register = () => {
             <Logo size="sm" variant="light" />
           </div>
           <h1 className="text-2xl font-bold text-primary-foreground mb-1">Provider Registration</h1>
-          <p className="text-primary-foreground/70 text-sm">
-            Step {currentStep} of {totalSteps}
-          </p>
+          <p className="text-primary-foreground/70 text-sm">Step {currentStep} of {totalSteps}</p>
           <div className="mt-4">
             <ProgressBar currentStep={currentStep} totalSteps={totalSteps} />
           </div>
         </div>
       </div>
 
-      {/* Form */}
       <div className="max-w-2xl mx-auto px-6 py-8">
-        {currentStep === 1 && <StepPersonalInfo formData={formData} update={update} addZipCode={addZipCode} removeZipCode={removeZipCode} csvInputRef={csvInputRef} onCsvUpload={handleCsvUpload} />}
+        {currentStep === 1 && (
+          <StepPersonalInfo
+            formData={formData}
+            update={update}
+            addZipCode={addZipCode}
+            removeZipCode={removeZipCode}
+            csvInputRef={csvInputRef}
+            onCsvUpload={handleCsvUpload}
+          />
+        )}
         {currentStep === 2 && <StepAccount formData={formData} update={update} />}
         {currentStep === 3 && <StepConfirmation />}
 
         {currentStep <= totalSteps && (
           <div className="flex gap-4 mt-8">
-            <Button variant="outline" onClick={handleBack} className="flex-1">
-              Back
-            </Button>
+            <Button variant="outline" onClick={handleBack} className="flex-1">Back</Button>
             {currentStep < totalSteps ? (
               <Button onClick={handleNext} className="flex-1">
                 Next <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             ) : (
-              <Button onClick={handleSubmit} disabled={loading} className="flex-1">
-                {loading ? 'Creating Account...' : 'Create Account'}
+              <Button onClick={handleSubmit} disabled={loading || !stripe} className="flex-1">
+                {loading ? 'Processing Payment...' : 'Pay & Create Account'}
               </Button>
             )}
           </div>
@@ -317,14 +313,9 @@ const Register = () => {
   );
 };
 
-/* ─── Step 1: Personal Information ─── */
+// ── Step 1: Personal Info ─────────────────────────────────────────────────────
 const StepPersonalInfo = ({
-  formData,
-  update,
-  addZipCode,
-  removeZipCode,
-  csvInputRef,
-  onCsvUpload,
+  formData, update, addZipCode, removeZipCode, csvInputRef, onCsvUpload,
 }: {
   formData: ProviderFormData;
   update: (field: keyof ProviderFormData, value: any) => void;
@@ -382,9 +373,7 @@ const StepPersonalInfo = ({
         <Select value={formData.state} onValueChange={(v) => update('state', v)}>
           <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
           <SelectContent>
-            {US_STATES.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
+            {US_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -399,9 +388,7 @@ const StepPersonalInfo = ({
             maxLength={5}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addZipCode())}
           />
-          <Button type="button" variant="secondary" size="sm" onClick={addZipCode} className="shrink-0">
-            +
-          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={addZipCode} className="shrink-0">+</Button>
           <Button type="button" variant="outline" size="sm" onClick={() => csvInputRef.current?.click()} className="shrink-0 gap-1" title="Upload CSV">
             <Upload className="w-3.5 h-3.5" />CSV
           </Button>
@@ -410,10 +397,7 @@ const StepPersonalInfo = ({
         {formData.serviceZipCodes.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {formData.serviceZipCodes.map((zip) => (
-              <span
-                key={zip}
-                className="inline-flex items-center gap-0.5 bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full text-xs"
-              >
+              <span key={zip} className="inline-flex items-center gap-0.5 bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full text-xs">
                 {zip}
                 <button onClick={() => removeZipCode(zip)} className="text-muted-foreground hover:text-foreground">×</button>
               </span>
@@ -423,67 +407,8 @@ const StepPersonalInfo = ({
       </div>
     </div>
 
-    {/* Card Payment Fields */}
-    {formData.paymentOption === 'card' && (
-      <div className="space-y-4 rounded-lg border border-border bg-secondary/20 p-4">
-        <h3 className="text-sm font-semibold text-foreground">Card Details</h3>
-        <div className="space-y-1.5">
-          <Label htmlFor="cardName">Name on Card *</Label>
-          <Input id="cardName" value={formData.cardName} onChange={(e) => update('cardName', e.target.value)} placeholder="Full name as it appears on card" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="cardNumber">Card Number *</Label>
-          <Input id="cardNumber" value={formData.cardNumber} onChange={(e) => update('cardNumber', e.target.value)} placeholder="1234 5678 9012 3456" maxLength={19} />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="cardExpiry">Expiration *</Label>
-            <Input id="cardExpiry" value={formData.cardExpiry} onChange={(e) => update('cardExpiry', e.target.value)} placeholder="MM/YY" maxLength={5} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cardCvv">CVV *</Label>
-            <Input id="cardCvv" type="password" value={formData.cardCvv} onChange={(e) => update('cardCvv', e.target.value)} placeholder="•••" maxLength={4} />
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ACH Payment Fields */}
-    {formData.paymentOption === 'ach' && (
-      <div className="space-y-4 rounded-lg border border-border bg-secondary/20 p-4">
-        <h3 className="text-sm font-semibold text-foreground">ACH Bank Details</h3>
-        <div className="space-y-1.5">
-          <Label htmlFor="achAccountName">Account Holder Name *</Label>
-          <Input id="achAccountName" value={formData.achAccountName} onChange={(e) => update('achAccountName', e.target.value)} placeholder="Full name on account" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="achRoutingNumber">Routing Number *</Label>
-          <Input id="achRoutingNumber" value={formData.achRoutingNumber} onChange={(e) => update('achRoutingNumber', e.target.value)} placeholder="9-digit routing number" maxLength={9} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="achAccountNumber">Account Number *</Label>
-          <Input id="achAccountNumber" type="password" value={formData.achAccountNumber} onChange={(e) => update('achAccountNumber', e.target.value)} placeholder="Account number" />
-        </div>
-      </div>
-    )}
-
-    <div className="space-y-2">
-      <Label>Payment Option *</Label>
-      <RadioGroup value={formData.paymentOption} onValueChange={(v) => update('paymentOption', v)} className="space-y-2">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <RadioGroupItem value="card" />
-          <span className="font-medium text-foreground">Debit/Credit Card</span>
-        </label>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <RadioGroupItem value="ach" />
-          <span className="font-medium text-foreground">ACH</span>
-        </label>
-      </RadioGroup>
-    </div>
-
     <div className="space-y-3">
       <Label>Payment Plan *</Label>
-
       <div className="rounded-lg border border-border bg-secondary/20 p-3 flex items-center justify-between">
         <div>
           <span className="font-medium text-foreground">Onboarding Fee</span>
@@ -491,7 +416,6 @@ const StepPersonalInfo = ({
         </div>
         <span className="font-semibold text-foreground">$299.00</span>
       </div>
-
       <RadioGroup value={formData.paymentPlan} onValueChange={(v) => update('paymentPlan', v)} className="space-y-2">
         <label className="flex items-center gap-3 cursor-pointer">
           <RadioGroupItem value="monthly" />
@@ -537,16 +461,15 @@ const StepPersonalInfo = ({
   </div>
 );
 
-/* ─── Step 2: Account Creation ─── */
+// ── Step 2: Account + Payment ─────────────────────────────────────────────────
 const StepAccount = ({
-  formData,
-  update,
+  formData, update,
 }: {
   formData: ProviderFormData;
   update: (field: keyof ProviderFormData, value: any) => void;
 }) => (
   <div className="space-y-5 animate-fade-in">
-    <h2 className="text-xl font-semibold text-foreground">Create Your Account</h2>
+    <h2 className="text-xl font-semibold text-foreground">Create Your Account & Pay</h2>
 
     <div className="rounded-lg border border-border bg-secondary/30 p-4 space-y-2">
       <div className="flex items-center gap-2 text-primary">
@@ -554,47 +477,53 @@ const StepAccount = ({
         <span className="font-medium text-sm">Almost there!</span>
       </div>
       <p className="text-sm text-muted-foreground">
-        Set a password to secure your provider account. You'll use your email (<strong className="text-foreground">{formData.email}</strong>) to log in.
+        Set a password and enter your payment details. You'll be charged $299 onboarding fee + your selected monthly plan.
       </p>
     </div>
 
     <div className="space-y-1.5">
       <Label htmlFor="password">Password *</Label>
-      <Input
-        id="password"
-        type="password"
-        value={formData.password}
-        onChange={(e) => update('password', e.target.value)}
-        placeholder="Min. 6 characters"
-      />
+      <Input id="password" type="password" value={formData.password} onChange={(e) => update('password', e.target.value)} placeholder="Min. 6 characters" />
     </div>
 
     <div className="space-y-1.5">
       <Label htmlFor="confirmPassword">Confirm Password *</Label>
-      <Input
-        id="confirmPassword"
-        type="password"
-        value={formData.confirmPassword}
-        onChange={(e) => update('confirmPassword', e.target.value)}
-      />
+      <Input id="confirmPassword" type="password" value={formData.confirmPassword} onChange={(e) => update('confirmPassword', e.target.value)} />
     </div>
 
     <div className="space-y-1.5">
       <Label htmlFor="additionalInfo">Anything else you'd like us to know?</Label>
-      <Textarea
-        id="additionalInfo"
-        value={formData.additionalInfo}
-        onChange={(e) => update('additionalInfo', e.target.value)}
-        rows={3}
-      />
+      <Textarea id="additionalInfo" value={formData.additionalInfo} onChange={(e) => update('additionalInfo', e.target.value)} rows={3} />
+    </div>
+
+    {/* Stripe Card Element */}
+    <div className="space-y-2">
+      <Label className="flex items-center gap-2">
+        <Lock className="w-4 h-4 text-muted-foreground" />
+        Payment Details *
+      </Label>
+      <div className="rounded-lg border border-border bg-background p-4">
+        <CardElement
+          options={{
+            style: {
+              base: {
+                fontSize: '16px',
+                color: '#1A1A2E',
+                '::placeholder': { color: '#6B7280' },
+              },
+              invalid: { color: '#DC2626' },
+            },
+          }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground flex items-center gap-1">
+        <Lock className="w-3 h-3" />
+        Secured by Stripe. You'll be charged $299 + {formData.paymentPlan === 'monthly-2' ? '$110/mo' : '$59.89/mo'}.
+      </p>
     </div>
 
     <label className="flex items-start gap-3 cursor-pointer pt-2">
-      <Checkbox
-        checked={formData.agreeTerms}
-        onCheckedChange={(v) => update('agreeTerms', !!v)}
-        className="mt-0.5"
-      />
+      <Checkbox checked={formData.agreeTerms} onCheckedChange={(v) => update('agreeTerms', !!v)} className="mt-0.5" />
       <span className="text-sm text-muted-foreground">
         I agree to the <span className="text-primary underline cursor-pointer">Terms of Service</span> and{' '}
         <span className="text-primary underline cursor-pointer">Privacy Policy</span>.
@@ -603,7 +532,7 @@ const StepAccount = ({
   </div>
 );
 
-/* ─── Step 3: Confirmation ─── */
+// ── Step 3: Confirmation ──────────────────────────────────────────────────────
 const StepConfirmation = () => {
   const navigate = useNavigate();
   return (
@@ -611,16 +540,21 @@ const StepConfirmation = () => {
       <CheckCircle2 className="w-16 h-16 text-primary mx-auto" />
       <h2 className="text-2xl font-bold text-foreground">Application Submitted!</h2>
       <p className="text-muted-foreground max-w-md mx-auto">
-        Thank you for registering. Your application is now under review. Once an admin approves your account, you will receive an email confirming that you now have access.
+        Thank you for registering. Your payment has been processed and your application is now under review. Once an admin approves your account, you will receive an email confirming access.
       </p>
       <p className="text-sm text-muted-foreground">
         Please also check your inbox to verify your email address.
       </p>
-      <Button onClick={() => navigate('/')} className="mt-4">
-        Back to Home
-      </Button>
+      <Button onClick={() => navigate('/')} className="mt-4">Back to Home</Button>
     </div>
   );
 };
+
+// ── Wrapped with Stripe Elements ──────────────────────────────────────────────
+const Register = () => (
+  <Elements stripe={stripePromise}>
+    <RegisterForm />
+  </Elements>
+);
 
 export default Register;
