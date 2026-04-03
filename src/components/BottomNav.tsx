@@ -16,7 +16,7 @@ const BottomNav = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/provider-login');
+    navigate('/');
   };
 
   return (
