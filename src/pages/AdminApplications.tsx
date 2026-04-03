@@ -100,12 +100,11 @@ const AdminApplications = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-        await fetch(`https://${projectId}.supabase.co/functions/v1/notify-provider-status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-          body: JSON.stringify({ applicationId: id, status }),
-        });
+        await fetch(`https://uwgfitnpesgdkiwtekcb.supabase.co/functions/v1/notify-provider-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ applicationId: id, status }),
+});
       }
     } catch (emailErr) {
       console.error('Email notification failed:', emailErr);
