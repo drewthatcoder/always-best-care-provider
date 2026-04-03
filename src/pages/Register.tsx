@@ -148,26 +148,36 @@ const RegisterForm = () => {
     else navigate('/');
   };
 
-  const handleSubmit = async () => {
-    if (!stripe || !elements) { toast.error('Stripe not loaded. Please refresh.'); return; }
-    if (!formData.password || formData.password.length < 6) { toast.error('Password must be at least 6 characters.'); return; }
-    if (formData.password !== formData.confirmPassword) { toast.error('Passwords do not match.'); return; }
-    if (!formData.agreeTerms) { toast.error('Please agree to the Terms of Service.'); return; }
+ import Stripe from "https://esm.sh/stripe@13.3.0";
 
-    const cardElement = elements.getElement(CardElement);
-    if (!cardElement) { toast.error('Please enter your card details.'); return; }
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
+  apiVersion: "2023-10-16",
+});
 
-    setLoading(true);
-    try {
-      // 1. Create payment method from card element
-      const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
-        type: 'card',
-        card: cardElement,
-        billing_details: {
-          name: `${formData.firstName} ${formData.lastName}`,
-          email: formData.email,
-        },
-      });
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  const { email, name, paymentMethodId } = await req.json();
+
+  const customer = await stripe.customers.create({
+    email,
+    name,
+    payment_method: paymentMethodId,
+    invoice_settings: { default_payment_method: paymentMethodId },
+  });
+
+  return new Response(
+    JSON.stringify({ customerId: customer.id }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+});
 
       if (pmError) { toast.error(pmError.message || 'Card error'); setLoading(false); return; }
 
