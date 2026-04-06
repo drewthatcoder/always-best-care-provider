@@ -26,6 +26,8 @@ const PRICE_IDS = {
 };
 
 const ONBOARDING_PRICE_ID = 'price_1TEIsOCv6ZSrYUtD73YcE4ZS';
+const SUPABASE_URL = 'https://uwgfitnpesgdkiwtekcb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3Z2ZpdG5wZXNnZGtpd3Rla2NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNDkxMTYsImV4cCI6MjA4OTYyNTExNn0.LDxFhHfaYGmFwsGqOfQoXrmFpKGb3J6ITOnMEh_1H3o';
 
 interface ProviderFormData {
   businessName: string;
@@ -90,7 +92,6 @@ const US_STATES = [
   'VA','WA','WV','WI','WY',
 ];
 
-// ── Inner form ────────────────────────────────────────────────────────────────
 const RegisterForm = () => {
   const navigate = useNavigate();
   const stripe = useStripe();
@@ -175,15 +176,21 @@ const RegisterForm = () => {
       });
       if (pmError) { toast.error(pmError.message || 'Card error'); setLoading(false); return; }
 
-      // 2. Create Stripe customer with payment method attached
-      const { data: customerData, error: customerError } = await supabase.functions.invoke('create-customer', {
-        body: {
+      // 2. Create Stripe customer via direct fetch (no auth required)
+      const customerRes = await fetch(`${SUPABASE_URL}/functions/v1/create-customer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
           email: formData.email,
           name: `${formData.firstName} ${formData.lastName}`,
           paymentMethodId: paymentMethod!.id,
-        },
+        }),
       });
-      if (customerError || !customerData?.customerId) { toast.error('Failed to create customer'); setLoading(false); return; }
+      const customerData = await customerRes.json();
+      if (!customerData?.customerId) { toast.error('Failed to create customer'); setLoading(false); return; }
       const customerId = customerData.customerId;
 
       // 3. Charge $299 onboarding fee
@@ -255,6 +262,34 @@ const RegisterForm = () => {
           last_name: formData.lastName,
           zip_code: formData.zipCode,
         } as any);
+
+        // 6. Send admin notification email
+        await fetch(`${SUPABASE_URL}/functions/v1/submit-provider-application`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            user_id: data.user.id,
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            email: formData.email,
+            phone: formData.phone,
+            adba: formData.adba,
+            address: formData.address,
+            city: formData.city,
+            state: formData.state,
+            zip_code: formData.zipCode,
+            payment_option: formData.paymentOption,
+            payment_plan: formData.paymentPlan,
+            selected_services: formData.selectedServices,
+            service_zip_codes: formData.serviceZipCodes,
+            available_days: formData.availableDays,
+            available_shifts: formData.availableShifts,
+            additional_info: formData.additionalInfo,
+          }),
+        });
       }
 
       toast.success('Account created! Please check your email to verify your account.');
@@ -317,7 +352,6 @@ const RegisterForm = () => {
   );
 };
 
-// ── Step 1 ────────────────────────────────────────────────────────────────────
 const StepPersonalInfo = ({
   formData, update, addZipCode, removeZipCode, csvInputRef, onCsvUpload,
 }: {
@@ -465,7 +499,6 @@ const StepPersonalInfo = ({
   </div>
 );
 
-// ── Step 2 ────────────────────────────────────────────────────────────────────
 const StepAccount = ({
   formData, update,
 }: {
@@ -535,7 +568,6 @@ const StepAccount = ({
   </div>
 );
 
-// ── Step 3 ────────────────────────────────────────────────────────────────────
 const StepConfirmation = () => {
   const navigate = useNavigate();
   return (
@@ -553,7 +585,6 @@ const StepConfirmation = () => {
   );
 };
 
-// ── Wrapped with Stripe Elements ──────────────────────────────────────────────
 const Register = () => (
   <Elements stripe={stripePromise}>
     <RegisterForm />
