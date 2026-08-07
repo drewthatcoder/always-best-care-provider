@@ -21,8 +21,8 @@ const stripePromise = loadStripe(
 );
 
 const PRICE_IDS = {
-  monthly:     'price_1TIBHpCv6ZSrYUtDLRps2vzO',
-  'monthly-2': 'price_1TIBInCv6ZSrYUtDnnotfVFQ',
+  monthly:     'price_1TEIrfCv6ZSrYUtDsndS9YWK',
+  'monthly-2': 'price_1TEIoiCv6ZSrYUtDaBnOm3tf',
 };
 
 const ONBOARDING_PRICE_ID = 'price_1TEIsOCv6ZSrYUtD73YcE4ZS';
