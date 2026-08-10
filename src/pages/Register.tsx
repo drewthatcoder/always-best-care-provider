@@ -27,7 +27,6 @@ const PRICE_IDS = {
 
 const ONBOARDING_PRICE_ID = 'price_1U30GlCv6ZSrYUtDiu049FtM';
 
-const ONBOARDING_PRICE_ID = 'price_1TEIsOCv6ZSrYUtD73YcE4ZS';
 const SUPABASE_URL = 'https://uwgfitnpesgdkiwtekcb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3Z2ZpdG5wZXNnZGtpd3Rla2NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNDkxMTYsImV4cCI6MjA4OTYyNTExNn0.LDxFhHfaYGmFwsGqOfQoXrmFpKGb3J6ITOnMEh_1H3o';
 
