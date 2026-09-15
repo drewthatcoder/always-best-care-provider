@@ -12,3 +12,8 @@ verify_jwt = true
 
 [functions.stripe-connect-webhook]
 verify_jwt = false
+
+# Mobile BookingScreen sends the anon JWT, not a provider user JWT.
+# Gateway JWT verify would still accept the anon key, but requireUser must not run.
+[functions.charge-client]
+verify_jwt = false
