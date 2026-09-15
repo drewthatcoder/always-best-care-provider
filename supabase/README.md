@@ -75,7 +75,9 @@ Signed-in providers use **Settings → Connect Stripe → Set up payouts**.
 
 ## Out of scope (later PRs)
 
-- Charge + transfer on client shift approve
+Charge + transfer is **not** implemented here. See [`docs/stripe-provider-billing-design.md`](../docs/stripe-provider-billing-design.md) (design only; no impl).
+
+- Charge + transfer on client shift approve (product confirmed: billing is **not** limited to shift approve)
 - Client PaymentMethod / SetupIntent wiring
 - Franchise price changes in `Register.tsx`
 - Live mode / production publish
