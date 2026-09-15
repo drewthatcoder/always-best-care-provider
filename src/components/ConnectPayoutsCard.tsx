@@ -164,6 +164,12 @@ const ConnectPayoutsCard = () => {
           </p>
         )}
 
+        {!user && (
+          <p className="text-xs text-muted-foreground">
+            Sign in as a provider to start TEST-mode Connect onboarding.
+          </p>
+        )}
+
         <Button
           size="sm"
           className="gap-1"
