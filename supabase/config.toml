@@ -12,3 +12,7 @@ verify_jwt = true
 
 [functions.stripe-connect-webhook]
 verify_jwt = false
+
+# Stub only — does not create PaymentIntents. Deploy overwrites hosted charge-client.
+[functions.charge-client]
+verify_jwt = true

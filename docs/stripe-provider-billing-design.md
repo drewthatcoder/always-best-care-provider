@@ -1,319 +1,151 @@
-# Provider-initiated Stripe Connect billing (TEST design)
+# Provider-initiated Connect charge (TEST, server-side)
 
-**Status:** design only — no charge/transfer implementation in this PR.  
-**Mode:** Stripe **TEST** only. No live keys. No production publish.  
-**Decision needed:** Drew / Software Lead approve this architecture before build.
+**Status:** design + non-charging stub. No live-mode. **No mobile edits.**  
+**Goal:** a provider charges a client’s **already-saved** card; funds go to the provider’s Stripe Connect account.  
+**Decision needed:** Drew / Software Lead approve before enabling `paymentIntents.create`.
 
-This document maps what exists today, what must not be reused, and a TEST-mode plan for:
-
-1. Clients save a card in the **client** app.
-2. Providers initiate charges for services.
-3. Funds land on the provider’s Stripe Connect connected account.
-
-Native iOS/Android UI is **out of scope** for this repo (Mobile Lead). Shared web / Capacitor surfaces are noted below.
+Mobile is already connected. Card-save source of truth is the local Expo app `mobile/testapp` (not in this repo; not modified). This repo owns Edge Functions + shared Supabase schema only.
 
 ---
 
-## 1. Current state
+## 1. Confirmed: where client Stripe IDs live
 
-### 1.1 Repos and apps
+Probed hosted project `uwgfitnpesgdkiwtekcb` (column exists = REST `select` 200; missing = Postgres 42703). RLS hides row values from anon, so **row contents were not inspected**.
 
-| Surface | Repo | Role |
-| --- | --- | --- |
-| Provider / franchise / admin web | `drewthatcoder/always-best-care-provider` (this repo) | Landing → `/register` (franchise billing), `/provider-login`, `/admin-*`, Settings Connect payouts. Also contains leftover **client** pages (`/signup`, `/client-dashboard`, `ClientProfileSection`). |
-| Client app | `drewthatcoder/always-best-care-client` (**accessible**, same org, same Supabase project `uwgfitnpesgdkiwtekcb`) | Client dashboard, profile, pending shifts. **Incomplete snapshot:** one commit (`Create .env`), 45 files. `App.tsx` still imports `SignUp` / `Register` / admin pages that are **not** in the tree. Generated `types.ts` is stale (no `client_profiles`, no `provider_profiles`). |
-| Hosted backend | Supabase project `uwgfitnpesgdkiwtekcb` | Shared Auth + Postgres + Edge Functions for both apps. |
-| Public site | `easycare.live` | Lovable-built provider landing (Hostinger). Not the client storefront. |
+| Table | `stripe_customer_id` | `payment_method_id` | Who it is |
+| --- | --- | --- | --- |
+| **`public.client_profiles`** | **yes** | **yes** | Care client. Only table with **both** ids. Columns: `id`, `user_id`, `stripe_customer_id`, `payment_method_id`, `created_at`. |
+| **`public.profiles`** | **yes** (live DB; **missing from generated `types.ts` until this PR**) | **no** | Shared user profile (client or provider). |
+| `public.provider_profiles` | yes | no | **Franchise** subscriber + Connect: `stripe_account_id`, `subscription_status`, Connect flags. **Do not charge a client with this `cus_`.** |
+| `public.provider_applications` | **no** | no | Register still inserts `stripe_customer_id` with `as any` — column does not exist. |
+| `public.bookings` | no | no | No amount / PI columns. |
 
-Both `package.json`s include Capacitor. In **this** repo, `isNativePlatform()` treats the native shell as the **client** experience (`Dashboard` skips provider-application gating when native). Mobile Lead owns native shells; this repo’s web pages may be wrapped later.
+**Canonical read for a client charge**
 
-Lovable MCP `list_projects` in the City of Trees Tech workspace did **not** return an Always Best Care project. Source of truth for this work is GitHub + the hosted Supabase project, not Lovable.
+1. `client_profiles` where `user_id = :clientUserId` → `stripe_customer_id` + `payment_method_id`.
+2. If `stripe_customer_id` is null, fall back to `profiles.stripe_customer_id` for the same `user_id` (mobile/`testapp` may write here; this repo cannot see that app).
+3. If `payment_method_id` is null, use the Stripe Customer’s default PaymentMethod (`invoice_settings.default_payment_method` or first attached card). Hosted `charge-client` already loads a Customer by `customerId`; that pattern only works if a default PM is attached on the Customer.
 
-### 1.2 How client payment methods are stored today
+**Writers in web repos (this repo + `always-best-care-client`)**
 
-**They are not stored.**
-
-| Location | What it does | Stripe? |
-| --- | --- | --- |
-| Live table `public.client_profiles` | Columns: `id`, `user_id`, `stripe_customer_id`, `payment_method_id`, `created_at`. Present on the hosted DB (REST select of those columns succeeds). | Columns exist; **no app writes them.** |
-| Client repo `PaymentEditForm` + `ClientProfileSection.handleSavePayment` | Placeholder: “Payment processing will be available soon.” Toast only. Raw card-number `<Input>`. | No |
-| Provider repo same components | Same placeholder. | No |
-| Provider repo `/signup` (`SignUp.tsx`) | Collects `cardNumber` in local state. **Never sent** to Stripe, `submit-client-booking`, or `client_profiles`. | No |
-| Hosted `create-setup-intent` | Exists. Returns `{ clientSecret }` for an empty/`email` body. **Not invoked by either frontend.** Does not persist `client_profiles`. A `customerId` that Stripe rejects yields 500. | SetupIntent only; Customer/PM not saved |
-| `profiles` | Name / zip only. No Stripe columns. | No |
-| `bookings` | Schedule + denormalized client contact fields. **No amount, rate, or payment columns.** | No |
-
-**Which app should save the card:** the **client** app (client repo native + its web/Capacitor profile). The provider-repo `/signup` and `ClientProfileSection` are shared web copies of the same placeholder and must stay in sync or be deleted from the provider tree so clients have one save path.
-
-Intended future row: one `client_profiles` row per client `user_id` with platform `cus_…` + default `pm_…`.
-
-### 1.3 How franchise (Register) Stripe works — do not reuse
-
-`src/pages/Register.tsx` is **franchise license billing** (Always Best Care pays the platform), not client care billing.
-
-Flow today:
-
-1. Stripe.js `createPaymentMethod` from `CardElement`.
-2. `POST /functions/v1/create-customer` (anon, no user JWT required) → `{ customerId }`.
-3. `create-payment-intent` with `{ customerId, priceId: ONBOARDING_PRICE_ID, paymentMethodId }` → `$299` onboarding → `confirmCardPayment`.
-4. `create-subscription` with monthly price (`$59.89` / `$110`) → `confirmCardPayment`.
-5. `auth.signUp` + insert `provider_applications` (including `stripe_customer_id` in the payload) + zip codes + `profiles`.
-
-**Leave this path entirely alone.** Do not add `transfer_data`, `application_fee_amount`, or Connect destinations to `create-payment-intent` or `create-subscription`.
-
-### 1.4 Hosted Edge Functions (not all versioned in git)
-
-Versioned in this repo (Connect onboarding, PR #1):
-
-- `create-connected-account` — auth’d provider; Express (`card_payments` + `transfers`) with Standard fallback; upserts `provider_profiles.stripe_account_id`.
-- `create-account-link` — AccountLink; return/refresh `/settings`.
-- `stripe-connect-webhook` — TEST only; `account.updated` → status flags. Refuses `livemode`.
-
-Hosted but **not** in this repo (do not `supabase functions deploy` over them from an empty tree):
-
-| Function | Probe (TEST, empty/invalid body) | Use |
-| --- | --- | --- |
-| `create-customer` | 200, creates a Customer even with empty email/name | Franchise Register only |
-| `create-payment-intent` | 200 with `{}` (creates a PI); uses `customerId` | Franchise Register only |
-| `create-subscription` | 400 “Must provide customer…” | Franchise Register only |
-| `create-setup-intent` | 200 `{ clientSecret }` | Intended client card-save; **unwired** |
-| `charge-client` | Reads **`customerId`** (not `customer` / `clientUserId`), `GET /v1/customers/{id}` | Orphan client-charge attempt; **no UI caller** |
-| `submit-provider-application` | Hits `provider_applications` | Franchise notify/insert helper |
-| `submit-client-booking` | **404 NOT_FOUND** | Called by provider-repo `/signup` |
-| `notify-provider-status` | **404** | Called by admin approve |
-
-`charge-client` is a **platform Customer retrieve**, not a Connect destination charge. There is no evidence it writes `transfer_data.destination` or a ledger table. Treat it as unsafe to reuse: unauthenticated-capable, no connected-account check, no versioned source.
-
-### 1.5 Connect onboarding (already shipped)
-
-- UI: Settings → **Payouts / Connect Stripe / Set up payouts** (`ConnectPayoutsCard`).
-- Live `provider_profiles`: `stripe_account_id`, `stripe_customer_id`, `subscription_status`, plus status columns `charges_enabled`, `payouts_enabled`, `details_submitted`, `onboarding_complete` (**already queryable** on the hosted DB — optional migration from PR #1 appears applied).
-- `provider_profiles.stripe_customer_id` is the **franchise** Customer (Register), **not** a care-client Customer. Do not charge clients with this id.
-
-### 1.6 Shift approve is not a charge
-
-`ClientPendingShifts.handleApprove` only sets `bookings.status = 'approved'` and inserts a notification. No Stripe. Drew confirmed billing is **not** limited to web shift approve. Do **not** hide the first charge button inside Approve.
-
----
-
-## 2. What must not be reused
-
-| Do not touch / do not extend | Why |
+| Writer | Writes client `cus_` / `pm_`? |
 | --- | --- |
-| `Register.tsx` + `create-customer` / `create-payment-intent` / `create-subscription` | Franchise MoR charges to the **platform**. Mixing Connect destinations here would siphon license fees to a provider or break subscriptions. |
-| `provider_profiles.stripe_customer_id` as the client’s card | That id is (or should be) the franchise subscriber. |
-| Writing `stripe_customer_id` onto `provider_applications` | **Column does not exist** on the live table. Register already does this with `as any` — the field is dropped/errors. Do not copy the pattern. |
-| Hosted `charge-client` as the Connect implementation | Platform-only Customer lookup; no git source; no destination; no auth story. Inspect later; replace with a new versioned function. |
-| Hosted `create-setup-intent` as-is for off-session | Returns a secret but does not upsert `client_profiles` or reliably bind a Customer. Either replace with a versioned function or wrap it with a persist step. |
-| Raw card-number inputs (`SignUp`, `PaymentEditForm`) | PCI anti-pattern. Cards must go through Stripe.js / Payment Element / PaymentSheet only. |
-| Charging inside `ClientPendingShifts` Approve | Wrong product moment; clients would be charged when confirming a time, not when a provider bills a service. |
-| Live-mode keys / live webhook events | Existing Connect helpers already refuse `sk_live_` and `livemode`. New billing functions must do the same. |
+| Client/provider web `PaymentEditForm` | No. Placeholder toast; raw card field. |
+| Provider `/signup` | No. `cardNumber` stays in React state; not sent to Stripe or DB. |
+| `Register.tsx` | Writes a **franchise** Customer via hosted `create-customer`, then tries `provider_applications.stripe_customer_id` (column missing). Does **not** write `client_profiles`. |
+| Hosted `create-setup-intent` | Returns `{ clientSecret }`. Not called by either web repo. Persist target unknown (no source in git). |
+| Hosted `charge-client` | Reads **`customerId`** from the body (`GET /v1/customers/{id}`). Does not look up `client_profiles`. No Connect `transfer_data`. |
+| Expo `mobile/testapp` | **Not in this environment.** Owner: this is how cards are saved. Assume it already writes `client_profiles` and/or `profiles.stripe_customer_id` (+ attaches PM on the Customer). |
+
+**Do not invent new client-id columns** until a TEST charge fails lookup. Prefer reading the two tables above.
 
 ---
 
-## 3. Recommended TEST architecture
+## 2. What exists vs what must not be reused
 
-### 3.1 Charge type: destination charges (not SCT, not direct)
+**Keep / already shipped**
 
-**Recommendation: Destination charges** on the **platform** PaymentIntent, with `transfer_data.destination = provider_profiles.stripe_account_id`.
+- Connect onboarding: `create-connected-account`, `create-account-link`, `stripe-connect-webhook`.
+- Settings → Payouts / Set up payouts.
+- `provider_profiles.stripe_account_id` + status flags (`charges_enabled`, `payouts_enabled`, `details_submitted`, `onboarding_complete` — live).
+
+**Leave franchise Register alone**
+
+`create-customer` / `create-payment-intent` / `create-subscription` + `src/pages/Register.tsx` charge the **platform** ($299 + license sub). Never add `transfer_data` there.
+
+**Hosted `charge-client` (today)**
+
+- Exists, not versioned in git, callable with the anon key.
+- Contract: `{ customerId }` (not `clientUserId`).
+- Platform Customer retrieve only — **not** a destination charge.
+- The stub in this PR versions a **replacement** with the same function name. **Do not deploy** until approved; deploy overwrites the hosted orphan.
+
+**Out of scope (do not do)**
+
+- Any mobile / Expo / Capacitor / `testapp` code.
+- Client web Payment Element / `/signup` card-save.
+- Charging on shift Approve.
+- Live keys / live webhook events.
+
+---
+
+## 3. TEST architecture (server-side only)
+
+**Charge type: destination charges.**
 
 ```
-Client (cus_ + pm_ on PLATFORM)
+client_profiles (or profiles fallback)
+  stripe_customer_id + payment_method_id
         │
-        │  provider calls create-provider-charge (JWT)
+        │  POST charge-client  { clientUserId, amountCents, bookingId? }
+        │  Authorization: provider JWT
         ▼
-Platform PaymentIntent
+Platform PaymentIntent (TEST)
   confirm: true
   off_session: true
-  customer: cus_…
-  payment_method: pm_…
-  transfer_data.destination: acct_…
-  metadata: provider_user_id, client_user_id, charge_row_id, mode=test
+  customer / payment_method from DB (+ Stripe default PM fallback)
+  transfer_data.destination = provider_profiles.stripe_account_id
         │
         ▼
-Connected account balance (Express)
+Provider Express connected account
 ```
 
-| Model | Fit here | Tradeoffs |
-| --- | --- | --- |
-| **Destination charges (recommended)** | One provider is known at charge time. Client Customer/PM stay on the platform. Express onboarding already requests `card_payments` + `transfers`. Platform remains merchant of record; optional `application_fee_amount` later. | Refunds/disputes sit on the platform. Connected account sees a transfer, not the original cardholder as clearly. Immediate transfer (less “hold then pay after visit”). |
-| Separate charges and transfers | Only if Drew wants “charge card now, pay provider later” or split one payment across multiple franchises. | More ledger complexity; platform must have balance; refunds/reversals are manual; Stripe recommends SCT only when the platform owns negative-balance risk. |
-| Direct charges | Standard accounts are historically “direct-first.” Would require cloning/creating the PM on each connected account. | Breaks “one card on the client, many possible providers.” Worse UX. Do not use for TEST MVP. |
-
-**Express vs Standard (as implemented):** `create-connected-account` prefers Express with capabilities, then falls back to Standard **without** requesting those capabilities. Destination charges are the Express-native model.
-
-**Billing rule for TEST:** only providers with `onboarding_complete` (or `charges_enabled && payouts_enabled`) **and** an Express account (or a Standard account that actually has `transfers`) may charge. Standard-fallback accounts without transfers are **non-billable** until Connect is fixed. Consider dropping Standard fallback in a later Connect PR; do not block this design on that.
-
-`on_behalf_of` is **not** required for TEST. Adding it later changes statement descriptor / dispute liability — product/legal decision, not a launch requirement.
-
-### 3.2 Two-step product flow
-
-```mermaid
-sequenceDiagram
-  participant ClientApp
-  participant SetupFn as create-client-setup-intent
-  participant Stripe
-  participant CP as client_profiles
-  participant ProvApp as Provider web
-  participant ChargeFn as create-provider-charge
-  participant Ledger as provider_charges
-  participant WH as stripe-billing-webhook
-
-  ClientApp->>SetupFn: JWT + email
-  SetupFn->>Stripe: Customer + SetupIntent
-  SetupFn->>CP: upsert stripe_customer_id
-  SetupFn-->>ClientApp: clientSecret
-  ClientApp->>Stripe: confirmSetup (Elements / PaymentSheet)
-  Stripe-->>WH: setup_intent.succeeded
-  WH->>CP: payment_method_id (+ default PM)
-
-  ProvApp->>ChargeFn: JWT, clientUserId, amountCents, optional bookingId
-  ChargeFn->>CP: load cus_ / pm_
-  ChargeFn->>Ledger: insert pending
-  ChargeFn->>Stripe: PaymentIntent destination + confirm off_session
-  Stripe-->>WH: payment_intent.succeeded / payment_failed
-  WH->>Ledger: succeeded / failed
-```
-
-Off-session requires a Customer **and** a PaymentMethod attached as default (or passed explicitly). SetupIntent-without-Customer (today’s hosted function) cannot support this.
-
----
-
-## 4. Concrete build list (after approval)
-
-### 4.1 Edge Functions (new, versioned under `supabase/functions/`)
-
-| Function | Auth | Behavior |
-| --- | --- | --- |
-| `create-client-setup-intent` | Client JWT | Refuse live keys. Reuse `client_profiles.stripe_customer_id` or create platform Customer (`metadata.supabase_user_id`, `role=client`). Create SetupIntent (`usage=off_session`). Return `clientSecret`. **Do not** overwrite franchise functions. |
-| `create-provider-charge` | Provider JWT | Refuse live keys. Load provider Connect account; require billable status. Load client `cus_` + `pm_`. Validate amount (positive integer cents, TEST cap e.g. $500). Optional `bookingId` must belong to that provider+client. Insert ledger `pending`. Create+confirm PI with `transfer_data.destination`. Never take `customerId` from the client body as the only check — always load from `client_profiles` by `client_user_id`. |
-| `stripe-billing-webhook` (or extend Connect webhook with a **separate** signing secret / endpoint) | Stripe signature, `verify_jwt=false` | TEST events only. Handle `setup_intent.succeeded`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `charge.refunded`. Ignore or no-op unknown types. **Do not** handle franchise subscription events here. |
-
-Keep using `_shared/stripe.ts` live-key refusal.
-
-**Do not deploy** replacements named `create-customer`, `create-payment-intent`, or `create-subscription`.
-
-### 4.2 Tables
-
-**Reuse**
-
-- `client_profiles` — platform `stripe_customer_id` + `payment_method_id`.
-- `provider_profiles` — `stripe_account_id` + Connect flags.
-
-**Add (migration, TEST/staging first)**
-
-```text
-provider_charges
-  id uuid pk
-  client_user_id uuid not null
-  provider_user_id uuid not null
-  booking_id uuid null          -- optional; billing is not shift-approve-only
-  amount_cents int not null
-  currency text not null default 'usd'
-  status text not null          -- pending | succeeded | failed | refunded
-  stripe_payment_intent_id text unique
-  stripe_charge_id text
-  stripe_transfer_id text
-  failure_code text
-  created_at / updated_at
-```
-
-No `payments` / `charges` table exists today (REST 404). Do not store PAN/CVC. Store Stripe ids only.
-
-Optional later: `bookings.payment_status` — not required if the ledger is the source of truth.
-
-### 4.3 RLS
-
-| Table | Policy |
+| Model | Verdict |
 | --- | --- |
-| `client_profiles` | Client `select` own row. **No** authenticated `update` of Stripe columns (service role / Edge Function only). Providers must not read other clients’ `payment_method_id` from the client. |
-| `provider_charges` | Client `select` where `client_user_id = auth.uid()`. Provider `select` where `provider_user_id = auth.uid()`. **No** insert/update/delete for `authenticated` — functions use service role. |
-| `provider_profiles` | Keep current provider self-read. Stripe account id is already shown on Settings. |
-| `bookings` | Unchanged. Charge function re-checks booking ownership if `bookingId` is passed. |
+| **Destination charges** | **Use.** One provider known at charge time. Client Customer stays on the platform (works with a card saved by mobile). Express onboarding already requests `card_payments` + `transfers`. Optional `application_fee_amount` later. |
+| Separate charges and transfers | Only if Drew needs “charge now, pay provider later” or multi-franchise split. More balance/refund risk. Not TEST MVP. |
+| Direct charges | Would clone PMs onto each connected account. Conflicts with one mobile-saved platform card. No. |
 
-Admin reads can use existing `has_role('admin')` if an admin billing screen is wanted later.
+**Gates before `paymentIntents.create` (next PR, not the stub)**
 
-### 4.4 Webhook events
+- `STRIPE_SECRET_KEY` is `sk_test_…` (existing `getStripe()` already refuses `sk_live_`).
+- Caller is an authenticated provider with `provider_profiles.stripe_account_id`.
+- Connect billable: `onboarding_complete` or (`charges_enabled && payouts_enabled`). Express preferred; Standard fallback without `transfers` is non-billable.
+- Client has a resolvable `cus_` and a `pm_` (column or Customer default).
+- `amountCents` is a positive int; TEST cap (e.g. 50_000).
+- If `bookingId` is sent, that booking’s `client_user_id` / `provider_user_id` must match.
 
-| Event | Writer | Action |
-| --- | --- | --- |
-| `account.updated` | existing `stripe-connect-webhook` | Connect flags (already designed). |
-| `setup_intent.succeeded` | billing webhook | Set `client_profiles.payment_method_id`; set Customer default PM. |
-| `payment_intent.succeeded` | billing webhook | Ledger → `succeeded`; store charge/transfer ids from PI. |
-| `payment_intent.payment_failed` | billing webhook | Ledger → `failed`. |
-| `charge.refunded` | billing webhook | Ledger → `refunded` (refunds out of TEST MVP UI). |
+**Webhook (follow-up, not this stub):** `payment_intent.succeeded` / `payment_failed` / `charge.refunded` on a **new** TEST endpoint. Do not mix franchise subscription events. Existing `account.updated` webhook stays as-is.
 
-Franchise events (`customer.subscription.*`, invoice paid) stay on whatever (unversioned) Stripe listeners exist today — **new endpoint**, do not share one secret with Register if that secret is already used elsewhere.
+**Ledger (follow-up):** `provider_charges` (`client_user_id`, `provider_user_id`, optional `booking_id`, `amount_cents`, `status`, `stripe_payment_intent_id`, transfer/charge ids). No such table today. Stub does not write it.
 
-### 4.5 UI entry points
+---
 
-**Provider web (this repo)**
+## 4. Stub in this PR
 
-- Settings: Connect onboarding only (already shipped). Not the charge button.
-- New: **Bill client** on provider job detail and/or a simple billing sheet (client picker + amount + optional booking). Disabled unless Connect status is `connected` and the client has a saved PM (function returns a clear error otherwise).
-- Approved Shifts / Dashboard: link into that sheet. **Not** automatic on confirm-shift.
+`supabase/functions/charge-client/index.ts`
 
-**Client web (client repo + shared copies in this repo)**
+- Auth: provider JWT (`verify_jwt = true`).
+- TEST Stripe client only (shared helper).
+- Resolves client ids (section 1) and provider `acct_`.
+- Builds the **intended** PaymentIntent params including `transfer_data.destination`.
+- **Does not** call `paymentIntents.create` or `transfers.create`.
+- Returns `501` + `{ stub: true, readyToCharge, blockers[], intendedPaymentIntent }` so a TEST invoke can prove lookups without moving money.
 
-- Replace `PaymentEditForm` placeholder with Stripe Payment Element / SetupIntent confirm.
-- `/signup` Payment step: same Elements flow, or defer card-save to post-login profile (safer if `submit-client-booking` is still 404).
-- Show last4/brand from PaymentMethod list via a tiny `get-client-payment-method` read (optional), never the raw number.
+After approval: set the stub flag off (or delete the early return) and insert the ledger row around `paymentIntents.create`.
 
-**Admin web**
+---
 
-- Out of scope for TEST MVP. Optional later: ledger list.
+## 5. Gaps / risks
 
-### 4.6 What Mobile Lead owns
-
-| Mobile Lead | This repo / client web |
+| Item | Notes |
 | --- | --- |
-| Native iOS/Android **save card** (Stripe PaymentSheet + SetupIntent `clientSecret` from `create-client-setup-intent`) | Web/Capacitor `PaymentEditForm` + `/signup` Elements |
-| Native **provider charge** UI (amount, client, result) calling `create-provider-charge` | Provider web Bill-client sheet |
-| Store/TestFlight TEST builds; Apple Pay / Google Pay if desired | Shared function + table contracts |
-| Not: Edge Functions, RLS, webhooks, Connect onboarding | Version functions + `docs` + Settings payouts |
-
-If Capacitor simply loads these web routes, Mobile Lead still owns store review, native Stripe SDK vs WebView PCI, and deep links. Do not assume WebView Elements is acceptable for App Store without their sign-off.
-
----
-
-## 5. Gaps and risks
-
-| Gap | Severity | Notes |
-| --- | --- | --- |
-| `submit-client-booking` **404** | High (intake) | Provider-repo `/signup` already warns and continues. New clients may have **no bookings**. Card-save must not depend on booking insert. |
-| `notify-provider-status` 404 | Medium | Admin email on application approve is broken; unrelated to charges. |
-| Client Customer / PM missing | **Blocker** for charges | `client_profiles` empty of writers. Off-session charge will fail until SetupIntent lands. |
-| Franchise `stripe_customer_id` written to **wrong table** | Medium (franchise) | `provider_applications.stripe_customer_id` does not exist. `provider_profiles.stripe_customer_id` is unused by Register. |
-| Hosted billing functions callable with anon key | High | `create-customer`, `create-payment-intent`, `create-setup-intent` create Stripe objects with `{}`. New functions **must** require the correct JWT and ignore client-supplied account ids. |
-| `charge-client` orphan | High if left public | Same anon surface; no Connect; no ledger. Prefer disable/replace after the new function ships. |
-| No amount on `bookings` | Product | Provider must enter TEST amount (or a later rate card). Nothing to auto-calc. |
-| Standard Connect fallback | Medium | May not be destination-charge capable. Gate on flags + account type. |
-| Client repo incomplete / stale types | Medium | Mobile Lead + client-app owner need `client_profiles` types and a buildable tree before native card-save. |
-| Dual client UIs | Medium | Placeholder payment UI exists in **both** repos. Implement once in client app; port or delete the provider-repo copy. |
-| PCI / raw card fields | High | Current inputs must be removed as part of the save-card PR, not left beside Elements. |
-| Connect AccountLink 5xx observed once in probe | Low | Re-test after secrets/deploy; onboarding already shipped. |
-| Legal / MoR | Product | Destination charges → platform is MoR. Confirm Always Best Care (corporate) vs franchise is the TEST statement descriptor. |
+| Mobile `testapp` not in repo | Cannot confirm which table it writes. Stub reads `client_profiles` then `profiles`. |
+| Dual `cus_` locations | `client_profiles` and `profiles` can diverge. Charge should prefer `client_profiles` and log when fallback is used. |
+| Hosted `charge-client` takes `customerId` | Mobile/provider callers must switch to `clientUserId` when the new function is deployed. |
+| Hosted functions create Stripe objects on `{}` | `create-customer` / `create-payment-intent` / `create-setup-intent` are anon-callable. New charge path requires JWT and server-side id lookup. |
+| `submit-client-booking` 404 | Intake only; unrelated to charge. |
+| No amount on `bookings` | Caller must send `amountCents`. |
+| Standard Connect fallback | May lack `transfers`. Gate on flags. |
+| Franchise `cus_` on `provider_profiles` | Never use as the client customer. |
 
 ---
 
-## 6. Suggested implementation order (after this design is approved)
+## 6. Approval checklist
 
-1. **Client save-card (TEST)** — version `create-client-setup-intent` + webhook persist + web Payment Element in the **client** app. Remove raw card inputs. Prove a `client_profiles` row with `cus_` + `pm_`.
-2. **Ledger + `create-provider-charge` (TEST)** — destination PI, JWT + Connect gate, no Register changes.
-3. **Provider web Bill-client UI** — Settings stays payouts-only.
-4. **Mobile Lead** — PaymentSheet + native charge screen against the same functions.
-5. Only then: refunds, application fees, live-mode runbook.
-
-**Success for the build phase:** a TEST card saved by a client can be charged by a Connect-complete provider and the connected account shows the TEST transfer in Stripe. No franchise Register regression. No live mode.
-
----
-
-## 7. Approval checklist
-
-- [ ] Destination charges (not SCT / not direct) for TEST MVP
-- [ ] New functions only; franchise Register path frozen
-- [ ] Card-save owned by client app (+ Mobile Lead for native)
-- [ ] Provider web Bill-client is the first charge UI (not shift Approve)
-- [ ] `client_profiles` is the only client Customer/PM store
-- [ ] `provider_charges` ledger required before first confirm
-- [ ] TEST keys only; live refused in code
+- [ ] Destination charges (`transfer_data.destination`) for TEST
+- [ ] Read client card from `client_profiles` (+ `profiles.stripe_customer_id` fallback)
+- [ ] Franchise Register functions frozen
+- [ ] No mobile / `testapp` changes
+- [ ] Enable real `paymentIntents.create` only after a stub invoke shows `readyToCharge: true`
+- [ ] TEST keys only

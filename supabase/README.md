@@ -15,7 +15,9 @@ Hosted project: `uwgfitnpesgdkiwtekcb`.
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. On `account.updated`, writes Connect flags. |
 | `migrations/20260915214100_provider_connect_status.sql` | **Optional, not auto-applied.** Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
 
-Existing hosted functions (`create-customer`, `create-payment-intent`, `create-subscription`, `create-setup-intent`, `charge-client`) stay as they are. Connect transfers must **not** be added to `create-payment-intent`.
+Existing hosted functions (`create-customer`, `create-payment-intent`, `create-subscription`, `create-setup-intent`) stay as they are. Connect transfers must **not** be added to `create-payment-intent`.
+
+`functions/charge-client` is a **TEST stub** (no `paymentIntents.create`). See [`docs/stripe-provider-billing-design.md`](../docs/stripe-provider-billing-design.md). **Do not deploy** it until approved — deploy overwrites the hosted orphan of the same name.
 
 ## 1. Optional SQL (status columns)
 
@@ -73,11 +75,9 @@ Signed-in providers use **Settings → Connect Stripe → Set up payouts**.
 3. Browser redirects to Stripe-hosted onboarding, then back to Settings.
 4. Status badge: **Connected** / **Incomplete** / **Restricted** (from status columns when present).
 
-## Out of scope (later PRs)
+## Out of scope
 
-Charge + transfer is **not** implemented here. See [`docs/stripe-provider-billing-design.md`](../docs/stripe-provider-billing-design.md) (design only; no impl).
-
-- Charge + transfer on client shift approve (product confirmed: billing is **not** limited to shift approve)
-- Client PaymentMethod / SetupIntent wiring
+- Mobile / Expo `testapp` (already connected; do not edit)
+- Enabling `paymentIntents.create` on `charge-client` (stub only until design approval)
 - Franchise price changes in `Register.tsx`
 - Live mode / production publish
