@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isBillableConnect, resolveClientPaymentRef } from "./resolveClientStripe";
+import {
+  destinationLookupPlan,
+  isBillableConnect,
+  resolveClientPaymentRef,
+} from "./resolveClientStripe";
 
 describe("resolveClientPaymentRef", () => {
   it("prefers client_profiles when both tables have a customer id", () => {
@@ -57,5 +61,26 @@ describe("isBillableConnect", () => {
         payouts_enabled: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("destinationLookupPlan", () => {
+  it("prefers connectedAccountId, then providerUserId, then bookingId", () => {
+    expect(
+      destinationLookupPlan({
+        connectedAccountId: "acct_abc",
+        providerUserId: "user-1",
+        bookingId: "book-1",
+      }),
+    ).toBe("connectedAccountId");
+    expect(destinationLookupPlan({ providerUserId: "user-1", bookingId: "book-1" })).toBe(
+      "providerUserId",
+    );
+    expect(destinationLookupPlan({ bookingId: "book-1" })).toBe("bookingId");
+    expect(destinationLookupPlan({})).toBe("none");
+  });
+
+  it("ignores connectedAccountId that is not an acct_ id", () => {
+    expect(destinationLookupPlan({ connectedAccountId: "not-an-account" })).toBe("none");
   });
 });

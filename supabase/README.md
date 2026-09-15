@@ -13,11 +13,12 @@ Hosted project: `uwgfitnpesgdkiwtekcb`.
 | `functions/create-connected-account` | Auth'd provider → Stripe Express account (Standard fallback) → upsert `provider_profiles.stripe_account_id` by `user_id`. Idempotent if already set. |
 | `functions/create-account-link` | Stripe AccountLink. Return/refresh URLs go to `/settings`. |
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. On `account.updated`, writes Connect flags. |
+| `functions/charge-client` | TEST PaymentIntent (`customerId`, `amount` cents). Anon CORS. Destination when resolvable; else platform + `warning`. **Do not deploy until approved.** |
 | `migrations/20260915214100_provider_connect_status.sql` | **Optional, not auto-applied.** Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
 
 Existing hosted functions (`create-customer`, `create-payment-intent`, `create-subscription`, `create-setup-intent`) stay as they are. Connect transfers must **not** be added to `create-payment-intent`.
 
-`functions/charge-client` is a **TEST stub** (no `paymentIntents.create`). See [`docs/stripe-provider-billing-design.md`](../docs/stripe-provider-billing-design.md). **Do not deploy** it until approved — deploy overwrites the hosted orphan of the same name.
+`functions/charge-client` is a **real TEST PaymentIntent** matching mobile `{ customerId, amount, description }` (anon JWT). Destination via optional `connectedAccountId` / `providerUserId` / `bookingId`; otherwise platform charge + `warning`. See [`docs/stripe-provider-billing-design.md`](../docs/stripe-provider-billing-design.md). **Do not deploy** until Software Lead says so — deploy overwrites the hosted function.
 
 ## 1. Optional SQL (status columns)
 
@@ -78,6 +79,6 @@ Signed-in providers use **Settings → Connect Stripe → Set up payouts**.
 ## Out of scope
 
 - Mobile / Expo `testapp` (already connected; do not edit)
-- Enabling `paymentIntents.create` on `charge-client` (stub only until design approval)
+- Deploying `charge-client` from this agent
 - Franchise price changes in `Register.tsx`
 - Live mode / production publish
