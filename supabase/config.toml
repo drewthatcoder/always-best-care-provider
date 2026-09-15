@@ -1,0 +1,14 @@
+# Always Best Care provider portal
+# Versions Stripe Connect Edge Functions for hosted project uwgfitnpesgdkiwtekcb.
+# TEST mode only — do not deploy live Stripe keys or charge production cards.
+
+project_id = "uwgfitnpesgdkiwtekcb"
+
+[functions.create-connected-account]
+verify_jwt = true
+
+[functions.create-account-link]
+verify_jwt = true
+
+[functions.stripe-connect-webhook]
+verify_jwt = false

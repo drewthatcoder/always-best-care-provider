@@ -101,6 +101,30 @@ export type Database = {
         }
         Relationships: []
       }
+      client_profiles: {
+        Row: {
+          created_at: string
+          id: string
+          payment_method_id: string | null
+          stripe_customer_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          payment_method_id?: string | null
+          stripe_customer_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          payment_method_id?: string | null
+          stripe_customer_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       deleted_bookings: {
         Row: {
           client_additional_info: string | null
@@ -323,6 +347,48 @@ export type Database = {
           updated_at?: string
           user_id?: string
           zip_code?: string | null
+        }
+        Relationships: []
+      }
+      provider_profiles: {
+        Row: {
+          business_name: string | null
+          charges_enabled: boolean | null
+          created_at: string
+          details_submitted: boolean | null
+          id: string
+          onboarding_complete: boolean | null
+          payouts_enabled: boolean | null
+          stripe_account_id: string | null
+          stripe_customer_id: string | null
+          subscription_status: string | null
+          user_id: string
+        }
+        Insert: {
+          business_name?: string | null
+          charges_enabled?: boolean | null
+          created_at?: string
+          details_submitted?: boolean | null
+          id?: string
+          onboarding_complete?: boolean | null
+          payouts_enabled?: boolean | null
+          stripe_account_id?: string | null
+          stripe_customer_id?: string | null
+          subscription_status?: string | null
+          user_id: string
+        }
+        Update: {
+          business_name?: string | null
+          charges_enabled?: boolean | null
+          created_at?: string
+          details_submitted?: boolean | null
+          id?: string
+          onboarding_complete?: boolean | null
+          payouts_enabled?: boolean | null
+          stripe_account_id?: string | null
+          stripe_customer_id?: string | null
+          subscription_status?: string | null
+          user_id?: string
         }
         Relationships: []
       }
