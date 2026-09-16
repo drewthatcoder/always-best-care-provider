@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/hooks/useAuth";
 import { isNativePlatform } from "@/hooks/usePlatform";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
+import ThemeClassSync from "@/components/ThemeClassSync";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
@@ -39,6 +40,7 @@ const isNative = isNativePlatform();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey={THEME_STORAGE_KEY}>
+      <ThemeClassSync />
       <AuthProvider>
       <TooltipProvider>
         <Toaster />

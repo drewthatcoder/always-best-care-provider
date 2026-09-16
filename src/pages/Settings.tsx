@@ -237,15 +237,15 @@ const Settings = () => {
                   </div>
                 );
 
+                if (item.isDarkMode) {
+                  return <DarkModeSwitch key={item.label} className={rowClass} />;
+                }
+
                 if (item.hasSwitch) {
                   return (
                     <div key={item.label} className={rowClass}>
                       {label}
-                      {item.isDarkMode ? (
-                        <DarkModeSwitch />
-                      ) : (
-                        <Switch defaultChecked={item.defaultChecked} />
-                      )}
+                      <Switch defaultChecked={item.defaultChecked} />
                     </div>
                   );
                 }
