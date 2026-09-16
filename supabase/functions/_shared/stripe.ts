@@ -1,24 +1,20 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { assertStripeSecretKey, isLiveStripeSecret } from "./stripeMode.ts";
 
 /**
- * TEST-mode Stripe client. Refuses live secret keys so this portal cannot
- * accidentally create production Connect accounts or charges.
+ * Stripe client for the platform account. Mode is the secret key
+ * (sk_live_ → live payouts, sk_test_ → TEST). Does not invent a live key.
  */
-export function getStripe(): Stripe {
-  const key = Deno.env.get("STRIPE_SECRET_KEY");
-  if (!key) {
-    throw new Error("STRIPE_SECRET_KEY is not set");
-  }
-  if (key.startsWith("sk_live_")) {
-    throw new Error(
-      "Live Stripe keys are not allowed. Always Best Care Connect onboarding is TEST mode only.",
-    );
-  }
-  if (!key.startsWith("sk_test_")) {
-    throw new Error("STRIPE_SECRET_KEY must be a Stripe TEST secret (sk_test_...).");
-  }
+export function getStripeSecretKey(): string {
+  return assertStripeSecretKey(Deno.env.get("STRIPE_SECRET_KEY"));
+}
 
-  return new Stripe(key, {
+export function isPlatformLive(): boolean {
+  return isLiveStripeSecret(getStripeSecretKey());
+}
+
+export function getStripe(): Stripe {
+  return new Stripe(getStripeSecretKey(), {
     apiVersion: "2024-06-20",
     httpClient: Stripe.createFetchHttpClient(),
   });

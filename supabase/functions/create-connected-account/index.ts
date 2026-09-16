@@ -1,12 +1,13 @@
 import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
-import { getStripe } from "../_shared/stripe.ts";
+import { getStripe, isPlatformLive } from "../_shared/stripe.ts";
+import { livemodeFromStripeObject } from "../_shared/stripeMode.ts";
 import { getServiceClient, requireUser } from "../_shared/supabase.ts";
 
 /**
  * Auth'd provider → Stripe Express (or Standard fallback) connected account.
  * Idempotent: if provider_profiles.stripe_account_id is already set, reuse it.
- * TEST mode only. Does not charge clients or create transfers.
+ * Mode follows STRIPE_SECRET_KEY. Does not charge clients or create transfers.
  */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return optionsResponse();
@@ -20,6 +21,7 @@ Deno.serve(async (req) => {
 
     const stripe = getStripe();
     const admin = getServiceClient();
+    const platformLive = isPlatformLive();
 
     const { data: existing, error: lookupError } = await admin
       .from("provider_profiles")
@@ -43,11 +45,11 @@ Deno.serve(async (req) => {
           ...flags,
           persisted: persist.persisted,
           warning: persist.warning ?? persist.error,
-          livemode: false,
+          livemode: livemodeFromStripeObject(account, platformLive),
         });
       } catch (retrieveError) {
         console.warn(
-          "Stored stripe_account_id could not be retrieved; creating a new TEST account",
+          "Stored stripe_account_id could not be retrieved; creating a new connected account",
           retrieveError,
         );
       }
@@ -56,7 +58,7 @@ Deno.serve(async (req) => {
     const metadata = {
       supabase_user_id: user.id,
       portal: "always-best-care-provider",
-      mode: "test",
+      mode: platformLive ? "live" : "test",
     };
 
     const common: Record<string, unknown> = {
@@ -65,7 +67,9 @@ Deno.serve(async (req) => {
       metadata,
       business_profile: {
         name: existing?.business_name || undefined,
-        product_description: "Always Best Care in-home care services (TEST)",
+        product_description: platformLive
+          ? "Always Best Care in-home care services"
+          : "Always Best Care in-home care services (TEST)",
       },
     };
 
@@ -115,7 +119,7 @@ Deno.serve(async (req) => {
       ...flags,
       persisted: persist.persisted,
       warning: persist.warning ?? persist.error,
-      livemode: false,
+      livemode: livemodeFromStripeObject(account, platformLive),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -1,6 +1,6 @@
 # Always Best Care provider portal
 # Versions Stripe Connect Edge Functions for hosted project uwgfitnpesgdkiwtekcb.
-# TEST mode only — do not deploy live Stripe keys or charge production cards.
+# Stripe mode follows STRIPE_SECRET_KEY (sk_live_ vs sk_test_).
 
 project_id = "uwgfitnpesgdkiwtekcb"
 

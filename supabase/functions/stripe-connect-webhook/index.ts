@@ -1,15 +1,16 @@
 import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
-import { getStripe, getWebhookCryptoProvider } from "../_shared/stripe.ts";
+import { getStripe, getStripeSecretKey, getWebhookCryptoProvider } from "../_shared/stripe.ts";
+import { eventMatchesStripeMode } from "../_shared/stripeMode.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 
 /**
- * Stripe Connect webhook (TEST mode).
- * verify_jwt is disabled in config.toml — Stripe signs the request instead.
+ * Stripe Connect webhook. verify_jwt is disabled in config.toml — Stripe
+ * signs the request instead.
  *
- * On account.updated, persist Connect capability flags onto provider_profiles
- * keyed by stripe_account_id. Does not charge, transfer, or touch
- * create-payment-intent.
+ * Accepts account.updated when event.livemode matches the platform secret
+ * (sk_live_ → live events, sk_test_ → test events). Does not charge,
+ * transfer, or touch create-payment-intent / charge-client.
  */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return optionsResponse();
@@ -35,9 +36,15 @@ Deno.serve(async (req) => {
       getWebhookCryptoProvider(),
     );
 
-    if (event.livemode) {
-      console.error("Rejected live-mode Stripe event; this webhook is TEST only");
-      return jsonResponse({ error: "Live-mode events are not accepted" }, 400);
+    if (!eventMatchesStripeMode(event.livemode, getStripeSecretKey())) {
+      const expected = event.livemode ? "a live secret (sk_live_...)" : "a test secret (sk_test_...)";
+      console.error(
+        `Rejected Stripe event livemode=${event.livemode}; STRIPE_SECRET_KEY does not match`,
+      );
+      return jsonResponse(
+        { error: `Event livemode does not match the platform Stripe key. Use ${expected}.` },
+        400,
+      );
     }
 
     if (event.type === "account.updated") {
@@ -55,10 +62,11 @@ Deno.serve(async (req) => {
         persisted: persist.persisted,
         onboardingComplete: flags.onboarding_complete,
         warning: persist.warning,
+        livemode: event.livemode,
       });
     }
 
-    return jsonResponse({ received: true, ignored: event.type });
+    return jsonResponse({ received: true, ignored: event.type, livemode: event.livemode });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("stripe-connect-webhook", message);

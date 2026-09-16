@@ -10,7 +10,9 @@ import { stripeAccountLinkBody } from "@/lib/accountLinkUrls";
 import {
   CONNECT_STATUS_ACTION,
   CONNECT_STATUS_LABEL,
+  connectModeBadge,
   deriveConnectStatus,
+  readLivemode,
   type ConnectProfile,
   type ConnectStatus,
 } from "@/lib/connectStatus";
@@ -47,6 +49,7 @@ const ConnectPayoutsCard = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [profile, setProfile] = useState<ConnectProfile | null>(null);
+  const [livemode, setLivemode] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
 
@@ -86,19 +89,23 @@ const ConnectPayoutsCard = () => {
       loaded = (full.data as ConnectProfile | null) ?? null;
     }
 
-    if (loaded?.stripe_account_id) {
-      const { data: syncData } = await supabase.functions.invoke("sync-connect-status", {
-        body: { accountId: loaded.stripe_account_id },
+    const { data: syncData } = await supabase.functions.invoke("sync-connect-status", {
+      body: loaded?.stripe_account_id ? { accountId: loaded.stripe_account_id } : {},
+    });
+    const syncedMode = readLivemode(syncData);
+    if (syncedMode !== null) setLivemode(syncedMode);
+    if (
+      loaded &&
+      syncData &&
+      (syncData.charges_enabled !== undefined || syncData.onboarding_complete !== undefined)
+    ) {
+      loaded = mergeConnectFlags(loaded, {
+        stripe_account_id: syncData.accountId ?? loaded.stripe_account_id,
+        charges_enabled: syncData.charges_enabled,
+        payouts_enabled: syncData.payouts_enabled,
+        details_submitted: syncData.details_submitted,
+        onboarding_complete: syncData.onboarding_complete,
       });
-      if (syncData && (syncData.charges_enabled !== undefined || syncData.onboarding_complete !== undefined)) {
-        loaded = mergeConnectFlags(loaded, {
-          stripe_account_id: syncData.accountId ?? loaded.stripe_account_id,
-          charges_enabled: syncData.charges_enabled,
-          payouts_enabled: syncData.payouts_enabled,
-          details_submitted: syncData.details_submitted,
-          onboarding_complete: syncData.onboarding_complete,
-        });
-      }
     }
 
     setProfile(loaded);
@@ -144,6 +151,9 @@ const ConnectPayoutsCard = () => {
         );
       }
 
+      const createdMode = readLivemode(accountData);
+      if (createdMode !== null) setLivemode(createdMode);
+
       const nextProfile = mergeConnectFlags(profile ?? { stripe_account_id: accountData?.accountId ?? null }, {
         stripe_account_id: accountData?.accountId ?? profile?.stripe_account_id ?? null,
         charges_enabled: accountData?.charges_enabled,
@@ -171,6 +181,9 @@ const ConnectPayoutsCard = () => {
           },
         },
       );
+
+      const linkMode = readLivemode(linkData);
+      if (linkMode !== null) setLivemode(linkMode);
 
       if (linkData && isConnectComplete(linkData)) {
         setProfile((prev) =>
@@ -205,6 +218,7 @@ const ConnectPayoutsCard = () => {
   };
 
   const status = deriveConnectStatus(profile);
+  const modeBadge = connectModeBadge(livemode);
 
   return (
     <div>
@@ -216,9 +230,16 @@ const ConnectPayoutsCard = () => {
             <span className="font-medium text-sm">Connect Stripe</span>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-              TEST mode
-            </Badge>
+            {modeBadge === "TEST" && (
+              <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                TEST mode
+              </Badge>
+            )}
+            {modeBadge === "LIVE" && (
+              <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                LIVE
+              </Badge>
+            )}
             <Badge variant="outline" className={statusBadgeClass(status)}>
               {CONNECT_STATUS_LABEL[status]}
             </Badge>
@@ -226,8 +247,9 @@ const ConnectPayoutsCard = () => {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Set up payouts so this franchise can receive TEST-mode transfers later. This does not
-          charge clients and does not change franchise registration billing.
+          {livemode === false
+            ? "Set up payouts so this franchise can receive TEST-mode transfers later. This does not charge clients and does not change franchise registration billing."
+            : "Set up payouts so this franchise can receive transfers to its connected Stripe account. This does not charge clients and does not change franchise registration billing."}
         </p>
 
         {profile?.stripe_account_id && (
@@ -238,7 +260,7 @@ const ConnectPayoutsCard = () => {
 
         {!user && (
           <p className="text-xs text-muted-foreground">
-            Sign in as a provider to start TEST-mode Connect onboarding.
+            Sign in as a provider to start Connect onboarding.
           </p>
         )}
 

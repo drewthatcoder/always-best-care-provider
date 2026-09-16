@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveConnectStatus } from "./connectStatus";
+import { connectModeBadge, deriveConnectStatus, readLivemode } from "./connectStatus";
 
 describe("deriveConnectStatus", () => {
   it("is not_started when there is no profile or account", () => {
@@ -54,5 +54,29 @@ describe("deriveConnectStatus", () => {
         onboarding_complete: false,
       }),
     ).toBe("connected");
+  });
+});
+
+describe("connectModeBadge", () => {
+  it("shows LIVE only when livemode is true", () => {
+    expect(connectModeBadge(true)).toBe("LIVE");
+  });
+
+  it("shows TEST only when livemode is false", () => {
+    expect(connectModeBadge(false)).toBe("TEST");
+  });
+
+  it("hides the mode badge when livemode is unknown", () => {
+    expect(connectModeBadge(null)).toBeNull();
+    expect(connectModeBadge(undefined)).toBeNull();
+  });
+});
+
+describe("readLivemode", () => {
+  it("reads Stripe livemode from function JSON", () => {
+    expect(readLivemode({ livemode: true })).toBe(true);
+    expect(readLivemode({ livemode: false })).toBe(false);
+    expect(readLivemode({ accountId: "acct_x" })).toBeNull();
+    expect(readLivemode(null)).toBeNull();
   });
 });
