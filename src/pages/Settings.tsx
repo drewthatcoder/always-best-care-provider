@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import BottomNav from '@/components/BottomNav';
 import ConnectPayoutsCard from '@/components/ConnectPayoutsCard';
+import DarkModeSwitch from '@/components/DarkModeSwitch';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -120,7 +121,7 @@ const Settings = () => {
       title: 'Preferences',
       items: [
         { icon: Bell, label: 'Push Notifications', hasSwitch: true, defaultChecked: true },
-        { icon: Moon, label: 'Dark Mode', hasSwitch: true, defaultChecked: false },
+        { icon: Moon, label: 'Dark Mode', hasSwitch: true, isDarkMode: true },
         { icon: Globe, label: 'Language', value: 'English' },
       ],
     },
@@ -137,7 +138,7 @@ const Settings = () => {
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <header className="bg-card border-b border-border p-4 sticky top-0 z-40">
-        <h1 className="text-lg font-semibold text-center">Settings</h1>
+        <h1 className="text-lg font-semibold text-center text-foreground">Settings</h1>
       </header>
 
       <main className="p-4 space-y-6">
@@ -225,29 +226,44 @@ const Settings = () => {
               {group.title}
             </h2>
             <div className="bg-card rounded-xl border border-border overflow-hidden">
-              {group.items.map((item, index) => (
-                <button
-                  key={item.label}
-                  className={`w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors ${
-                    index !== group.items.length - 1 ? 'border-b border-border' : ''
-                  }`}
-                >
+              {group.items.map((item, index) => {
+                const rowClass = `w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors ${
+                  index !== group.items.length - 1 ? 'border-b border-border' : ''
+                }`;
+                const label = (
                   <div className="flex items-center gap-3">
                     <item.icon className="w-5 h-5 text-primary" />
-                    <span className="font-medium">{item.label}</span>
+                    <span className="font-medium text-foreground">{item.label}</span>
                   </div>
-                  {item.hasSwitch ? (
-                    <Switch defaultChecked={item.defaultChecked} />
-                  ) : item.value ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <span className="text-sm">{item.value}</span>
-                      <ChevronRight className="w-4 h-4" />
+                );
+
+                if (item.isDarkMode) {
+                  return <DarkModeSwitch key={item.label} className={rowClass} />;
+                }
+
+                if (item.hasSwitch) {
+                  return (
+                    <div key={item.label} className={rowClass}>
+                      {label}
+                      <Switch defaultChecked={item.defaultChecked} />
                     </div>
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                  )}
-                </button>
-              ))}
+                  );
+                }
+
+                return (
+                  <button key={item.label} className={rowClass}>
+                    {label}
+                    {item.value ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span className="text-sm">{item.value}</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </div>
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ))}

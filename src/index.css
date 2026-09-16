@@ -60,7 +60,9 @@
     --sidebar-ring: 210 100% 50%;
   }
 
-  .dark {
+  /* html.dark beats :root on iOS/Android WebViews (same specificity otherwise). */
+  html.dark {
+    color-scheme: dark;
     --background: 238 40% 8%;
     --foreground: 0 0% 98%;
 
@@ -111,6 +113,13 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  html.dark,
+  html.dark body {
+    color-scheme: dark;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
 }
 
