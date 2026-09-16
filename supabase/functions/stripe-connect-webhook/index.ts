@@ -1,3 +1,4 @@
+import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { getStripe, getWebhookCryptoProvider } from "../_shared/stripe.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
@@ -41,42 +42,19 @@ Deno.serve(async (req) => {
 
     if (event.type === "account.updated") {
       const account = event.data.object;
-      const chargesEnabled = Boolean(account.charges_enabled);
-      const payoutsEnabled = Boolean(account.payouts_enabled);
-      const detailsSubmitted = Boolean(account.details_submitted);
-      const onboardingComplete = detailsSubmitted && chargesEnabled && payoutsEnabled;
-
+      const flags = flagsFromAccount(account);
       const admin = getServiceClient();
-      const { error, count } = await admin
-        .from("provider_profiles")
-        .update({
-          charges_enabled: chargesEnabled,
-          payouts_enabled: payoutsEnabled,
-          details_submitted: detailsSubmitted,
-          onboarding_complete: onboardingComplete,
-        })
-        .eq("stripe_account_id", account.id)
-        .select("id", { count: "exact", head: true });
+      const persist = await persistConnectFlags(admin, account.id, flags);
 
-      if (error) {
-        const missingColumn = /column .* does not exist/i.test(error.message);
-        console.error("account.updated persist failed", error.message);
-        if (missingColumn) {
-          // Migration not applied yet — acknowledge so Stripe does not retry-storm.
-          return jsonResponse({
-            received: true,
-            persisted: false,
-            warning:
-              "provider_profiles status columns are missing. Run supabase/migrations/20260915214100_provider_connect_status.sql in the SQL Editor.",
-          });
-        }
-        return jsonResponse({ error: error.message }, 500);
+      if (persist.error) {
+        return jsonResponse({ error: persist.error }, 500);
       }
 
       return jsonResponse({
         received: true,
-        persisted: (count ?? 0) > 0,
-        onboardingComplete,
+        persisted: persist.persisted,
+        onboardingComplete: flags.onboarding_complete,
+        warning: persist.warning,
       });
     }
 

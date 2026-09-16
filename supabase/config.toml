@@ -10,5 +10,8 @@ verify_jwt = true
 [functions.create-account-link]
 verify_jwt = true
 
+[functions.sync-connect-status]
+verify_jwt = true
+
 [functions.stripe-connect-webhook]
 verify_jwt = false
