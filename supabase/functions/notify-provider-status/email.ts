@@ -1,9 +1,12 @@
+import { AGREEMENT_RETURN_EMAIL, EMAIL_FROM } from "../_shared/email.ts";
+
+export { AGREEMENT_RETURN_EMAIL, EMAIL_FROM };
+
 export const APPROVAL_SUBJECT = "🎉 Your Provider Application Has Been Approved";
 export const REJECTION_SUBJECT = "Your Provider Application Status Update";
 export const PROVIDER_APP_URL = "https://easycare.live";
 export const SETTINGS_URL = "https://easycare.live/settings";
 export const SUPPORT_EMAIL = "techsupport@cityoftreestech.com";
-export const EMAIL_FROM = "CareConnect <onboarding@resend.dev>";
 
 export type ProviderStatus = "approved" | "rejected";
 
@@ -47,6 +50,9 @@ export function approvalHtml(firstName: string): string {
                style="background: #16a34a; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block;">
               Set up payouts
             </a>
+          </p>
+          <p>If you have not already returned a signed Agency Subscriber Agreement, please sign it and email it to
+            <a href="mailto:${AGREEMENT_RETURN_EMAIL}">${AGREEMENT_RETURN_EMAIL}</a>.
           </p>
           <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
             Questions? Contact <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGREEMENT_RETURN_EMAIL,
   APPROVAL_SUBJECT,
   EMAIL_FROM,
   REJECTION_SUBJECT,
@@ -43,6 +44,9 @@ describe("notify-provider-status email", () => {
     expect(html).toContain(`href="${SETTINGS_URL}"`);
     expect(html).toContain("do not need a separate Stripe platform account");
     expect(html).toContain(SUPPORT_EMAIL);
+    expect(html).toContain("If you have not already returned a signed Agency Subscriber Agreement");
+    expect(html).toContain(`mailto:${AGREEMENT_RETURN_EMAIL}`);
+    expect(html).toContain(AGREEMENT_RETURN_EMAIL);
     expect(html).not.toContain("lovable.app");
   });
 
@@ -54,5 +58,7 @@ describe("notify-provider-status email", () => {
     expect(rejectionHtml("Jordan")).not.toContain("Set up payouts");
     expect(rejectionHtml("Jordan")).not.toContain(SETTINGS_URL);
     expect(rejectionHtml("Jordan")).not.toContain("Stripe");
+    expect(rejectionHtml("Jordan")).not.toContain(AGREEMENT_RETURN_EMAIL);
+    expect(rejectionHtml("Jordan")).not.toContain("Agency Subscriber Agreement");
   });
 });

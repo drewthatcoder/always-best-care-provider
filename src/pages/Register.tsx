@@ -264,7 +264,7 @@ const RegisterForm = () => {
           zip_code: formData.zipCode,
         } as any);
 
-        // 6. Send admin notification email
+        // 6. Email the Agency Subscriber Agreement to the new provider (server-side Resend)
         await fetch(`${SUPABASE_URL}/functions/v1/submit-provider-application`, {
           method: 'POST',
           headers: {
@@ -577,6 +577,9 @@ const StepConfirmation = () => {
       <h2 className="text-2xl font-bold text-foreground">Application Submitted!</h2>
       <p className="text-muted-foreground max-w-md mx-auto">
         Thank you for registering. Your payment has been processed and your application is now under review. Once an admin approves your account, you will receive an email confirming access.
+      </p>
+      <p className="text-sm text-muted-foreground max-w-md mx-auto">
+        Please check your inbox for the Agency Subscriber Agreement. Download it, sign it, and email the signed copy to dbarbee@abc-seniors.com.
       </p>
       <p className="text-sm text-muted-foreground">
         Please also check your inbox to verify your email address.

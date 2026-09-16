@@ -23,3 +23,7 @@ verify_jwt = false
 # AdminApplications sends the admin user JWT. The function checks admin role itself.
 [functions.notify-provider-status]
 verify_jwt = false
+
+# Register.tsx sends the anon JWT after paid signup. The function emails the agreement via Resend.
+[functions.submit-provider-application]
+verify_jwt = false
