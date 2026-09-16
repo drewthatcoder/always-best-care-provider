@@ -1,6 +1,7 @@
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
-import { getStripe } from "../_shared/stripe.ts";
+import { getStripe, isPlatformLive } from "../_shared/stripe.ts";
+import { livemodeFromStripeObject } from "../_shared/stripeMode.ts";
 import { getServiceClient, requireUser } from "../_shared/supabase.ts";
 
 type Body = {
@@ -10,7 +11,7 @@ type Body = {
 /**
  * Retrieves the provider's Stripe Connect account and writes capability flags.
  * Recovers Settings badge state when account.updated webhooks were missed.
- * TEST mode only. Does not charge clients or create transfers.
+ * Mode follows STRIPE_SECRET_KEY. Does not charge clients or create transfers.
  */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return optionsResponse();
@@ -31,6 +32,7 @@ Deno.serve(async (req) => {
 
     const stripe = getStripe();
     const admin = getServiceClient();
+    const platformLive = isPlatformLive();
 
     const { data: profile, error: lookupError } = await admin
       .from("provider_profiles")
@@ -41,10 +43,11 @@ Deno.serve(async (req) => {
 
     const accountId = profile?.stripe_account_id ?? undefined;
     if (!accountId) {
-      return jsonResponse(
-        { error: "No connected account yet. Call create-connected-account first." },
-        400,
-      );
+      return jsonResponse({
+        accountId: null,
+        livemode: platformLive,
+        warning: "No connected account yet. Call create-connected-account first.",
+      });
     }
 
     if (body.accountId && body.accountId !== accountId) {
@@ -60,7 +63,7 @@ Deno.serve(async (req) => {
       ...flags,
       persisted: persist.persisted,
       warning: persist.warning ?? persist.error,
-      livemode: false,
+      livemode: livemodeFromStripeObject(account, platformLive),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

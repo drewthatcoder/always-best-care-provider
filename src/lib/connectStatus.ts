@@ -41,3 +41,16 @@ export const CONNECT_STATUS_ACTION: Record<ConnectStatus, string> = {
   restricted: "Fix Stripe restrictions",
   connected: "Update Stripe details",
 };
+
+/** TEST badge only for test keys; LIVE when the platform/account is live. */
+export function connectModeBadge(livemode: boolean | null | undefined): "LIVE" | "TEST" | null {
+  if (livemode === true) return "LIVE";
+  if (livemode === false) return "TEST";
+  return null;
+}
+
+export function readLivemode(data: unknown): boolean | null {
+  if (!data || typeof data !== "object") return null;
+  const value = (data as { livemode?: unknown }).livemode;
+  return typeof value === "boolean" ? value : null;
+}

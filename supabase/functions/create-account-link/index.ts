@@ -1,7 +1,8 @@
 import { resolveAccountLinkUrls } from "../_shared/accountLinkUrls.ts";
 import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
-import { getStripe } from "../_shared/stripe.ts";
+import { getStripe, isPlatformLive } from "../_shared/stripe.ts";
+import { livemodeFromStripeObject } from "../_shared/stripeMode.ts";
 import { getServiceClient, requireUser } from "../_shared/supabase.ts";
 
 type Body = {
@@ -13,7 +14,7 @@ type Body = {
 
 /**
  * Creates a Stripe AccountLink so the provider can finish Connect onboarding.
- * Return/refresh land on /settings. TEST mode only.
+ * Return/refresh land on /settings. Mode follows STRIPE_SECRET_KEY.
  *
  * Already-complete accounts persist flags and either return an account_update /
  * login link or a 200 with alreadyComplete so Settings can show Connected.
@@ -44,6 +45,7 @@ Deno.serve(async (req) => {
 
     const stripe = getStripe();
     const admin = getServiceClient();
+    const platformLive = isPlatformLive();
 
     const { data: profile, error: lookupError } = await admin
       .from("provider_profiles")
@@ -87,7 +89,7 @@ Deno.serve(async (req) => {
         ...flags,
         persisted: persist.persisted,
         warning: persist.warning,
-        livemode: false,
+        livemode: livemodeFromStripeObject(account, platformLive),
       });
     } catch (linkError) {
       const linkMessage =
@@ -104,7 +106,7 @@ Deno.serve(async (req) => {
             ...flags,
             persisted: persist.persisted,
             warning: persist.warning,
-            livemode: false,
+            livemode: livemodeFromStripeObject(account, platformLive),
           });
         } catch (fallbackError) {
           console.warn("create-account-link onboarding fallback failed", fallbackError);
@@ -121,7 +123,7 @@ Deno.serve(async (req) => {
             ...flags,
             persisted: persist.persisted,
             warning: persist.warning,
-            livemode: false,
+            livemode: livemodeFromStripeObject(account, platformLive),
           });
         } catch (loginError) {
           console.warn("create-account-link login_link failed", loginError);
@@ -131,7 +133,7 @@ Deno.serve(async (req) => {
             ...flags,
             persisted: persist.persisted,
             warning: linkMessage,
-            livemode: false,
+            livemode: livemodeFromStripeObject(account, platformLive),
           });
         }
       }
@@ -142,6 +144,7 @@ Deno.serve(async (req) => {
           alreadyComplete: false,
           ...flags,
           persisted: persist.persisted,
+          livemode: livemodeFromStripeObject(account, platformLive),
         },
         400,
       );
