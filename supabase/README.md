@@ -18,6 +18,7 @@ This does **not** change the franchise registration flow in `src/pages/Register.
 | `functions/sync-connect-status` | Auth'd provider → `accounts.retrieve` → write the four flags. Settings calls this on load (also when there is no account yet, so the LIVE/TEST badge can follow the platform key). |
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. Accepts `account.updated` when `event.livemode` matches the secret key (`sk_live_` ↔ live events). |
 | `functions/charge-client` | Mobile BookingScreen charge. Same shared Stripe helper as Connect. `verify_jwt = false`. Optional destination; does not fail the charge if destination is missing. |
+| `functions/notify-provider-status` | Admin approve/reject → Resend. Approval includes Set up payouts steps and a CTA to `https://easycare.live/settings`. Rejection copy is unchanged. Uses `RESEND_API_KEY` (already in hosted secrets). |
 | `migrations/20260915214100_provider_connect_status.sql` | Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
 
 ## LIVE cutover checklist (easycare.live)
@@ -33,6 +34,7 @@ supabase functions deploy create-account-link --project-ref uwgfitnpesgdkiwtekcb
 supabase functions deploy sync-connect-status --project-ref uwgfitnpesgdkiwtekcb
 supabase functions deploy stripe-connect-webhook --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 supabase functions deploy charge-client --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy notify-provider-status --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 ```
 
 `stripe-connect-webhook` must stay `verify_jwt = false` (see `config.toml`). Stripe signs the body; there is no user JWT.

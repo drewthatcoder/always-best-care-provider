@@ -19,3 +19,7 @@ verify_jwt = false
 # Mobile BookingScreen sends the anon JWT, not a provider user JWT.
 [functions.charge-client]
 verify_jwt = false
+
+# AdminApplications sends the admin user JWT. The function checks admin role itself.
+[functions.notify-provider-status]
+verify_jwt = false
