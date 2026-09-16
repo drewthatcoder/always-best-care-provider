@@ -1,3 +1,4 @@
+import { flagsFromAccount, persistConnectFlags } from "../_shared/connectFlags.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { getStripe } from "../_shared/stripe.ts";
 import { getServiceClient, requireUser } from "../_shared/supabase.ts";
@@ -33,10 +34,15 @@ Deno.serve(async (req) => {
     if (existing?.stripe_account_id) {
       try {
         const account = await stripe.accounts.retrieve(existing.stripe_account_id);
+        const flags = flagsFromAccount(account);
+        const persist = await persistConnectFlags(admin, account.id, flags);
         return jsonResponse({
           accountId: account.id,
           created: false,
           alreadyExisted: true,
+          ...flags,
+          persisted: persist.persisted,
+          warning: persist.warning ?? persist.error,
           livemode: false,
         });
       } catch (retrieveError) {
@@ -98,11 +104,17 @@ Deno.serve(async (req) => {
       if (insertError) return jsonResponse({ error: insertError.message }, 500);
     }
 
+    const flags = flagsFromAccount(account);
+    const persist = await persistConnectFlags(admin, account.id, flags);
+
     return jsonResponse({
       accountId: account.id,
       created: true,
       alreadyExisted: false,
       accountType,
+      ...flags,
+      persisted: persist.persisted,
+      warning: persist.warning ?? persist.error,
       livemode: false,
     });
   } catch (error) {

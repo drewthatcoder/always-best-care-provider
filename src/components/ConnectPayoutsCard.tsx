@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { stripeAccountLinkBody } from "@/lib/accountLinkUrls";
 import {
   CONNECT_STATUS_ACTION,
   CONNECT_STATUS_LABEL,
@@ -13,6 +14,7 @@ import {
   type ConnectProfile,
   type ConnectStatus,
 } from "@/lib/connectStatus";
+import { isConnectComplete, readFunctionError } from "@/lib/invokeFunction";
 
 const FULL_SELECT =
   "id, user_id, business_name, stripe_account_id, stripe_customer_id, subscription_status, charges_enabled, payouts_enabled, details_submitted, onboarding_complete";
@@ -24,6 +26,21 @@ function statusBadgeClass(status: ConnectStatus): string {
   if (status === "restricted") return "bg-red-100 text-red-800 border-red-200";
   if (status === "incomplete") return "bg-amber-100 text-amber-800 border-amber-200";
   return "bg-muted text-muted-foreground";
+}
+
+function mergeConnectFlags(
+  profile: ConnectProfile,
+  flags: Partial<ConnectProfile> | null | undefined,
+): ConnectProfile {
+  if (!flags) return profile;
+  return {
+    ...profile,
+    stripe_account_id: flags.stripe_account_id ?? profile.stripe_account_id,
+    charges_enabled: flags.charges_enabled ?? profile.charges_enabled,
+    payouts_enabled: flags.payouts_enabled ?? profile.payouts_enabled,
+    details_submitted: flags.details_submitted ?? profile.details_submitted,
+    onboarding_complete: flags.onboarding_complete ?? profile.onboarding_complete,
+  };
 }
 
 const ConnectPayoutsCard = () => {
@@ -47,6 +64,8 @@ const ConnectPayoutsCard = () => {
       .eq("user_id", user.id)
       .maybeSingle();
 
+    let loaded: ConnectProfile | null = null;
+
     if (full.error && /does not exist|schema cache/i.test(full.error.message)) {
       const base = await supabase
         .from("provider_profiles")
@@ -58,18 +77,31 @@ const ConnectPayoutsCard = () => {
         setLoading(false);
         return;
       }
-      setProfile((base.data as ConnectProfile | null) ?? null);
-      setLoading(false);
-      return;
-    }
-
-    if (full.error) {
+      loaded = (base.data as ConnectProfile | null) ?? null;
+    } else if (full.error) {
       toast.error(full.error.message);
       setLoading(false);
       return;
+    } else {
+      loaded = (full.data as ConnectProfile | null) ?? null;
     }
 
-    setProfile((full.data as ConnectProfile | null) ?? null);
+    if (loaded?.stripe_account_id) {
+      const { data: syncData } = await supabase.functions.invoke("sync-connect-status", {
+        body: { accountId: loaded.stripe_account_id },
+      });
+      if (syncData && (syncData.charges_enabled !== undefined || syncData.onboarding_complete !== undefined)) {
+        loaded = mergeConnectFlags(loaded, {
+          stripe_account_id: syncData.accountId ?? loaded.stripe_account_id,
+          charges_enabled: syncData.charges_enabled,
+          payouts_enabled: syncData.payouts_enabled,
+          details_submitted: syncData.details_submitted,
+          onboarding_complete: syncData.onboarding_complete,
+        });
+      }
+    }
+
+    setProfile(loaded);
     setLoading(false);
   }, [user]);
 
@@ -101,27 +133,67 @@ const ConnectPayoutsCard = () => {
 
     setStarting(true);
     try {
+      const origin = window.location.origin;
       const { data: accountData, error: accountError } = await supabase.functions.invoke(
         "create-connected-account",
         { body: {} },
       );
-      if (accountError) throw accountError;
-      if (accountData?.error) throw new Error(accountData.error);
+      if (accountError || accountData?.error) {
+        throw new Error(
+          readFunctionError(accountData, accountError, "Could not create a Stripe connected account."),
+        );
+      }
 
-      const origin = window.location.origin;
+      const nextProfile = mergeConnectFlags(profile ?? { stripe_account_id: accountData?.accountId ?? null }, {
+        stripe_account_id: accountData?.accountId ?? profile?.stripe_account_id ?? null,
+        charges_enabled: accountData?.charges_enabled,
+        payouts_enabled: accountData?.payouts_enabled,
+        details_submitted: accountData?.details_submitted,
+        onboarding_complete: accountData?.onboarding_complete,
+      });
+      setProfile(nextProfile);
+
+      const alreadyComplete = isConnectComplete(accountData);
+      const currentStatus = deriveConnectStatus(profile);
+
+      if (alreadyComplete && currentStatus !== "connected") {
+        toast.success("Stripe payouts are connected.");
+        setStarting(false);
+        return;
+      }
+
       const { data: linkData, error: linkError } = await supabase.functions.invoke(
         "create-account-link",
         {
           body: {
-            origin,
-            returnUrl: `${origin}/settings?connect=return`,
-            refreshUrl: `${origin}/settings?connect=refresh`,
+            ...stripeAccountLinkBody(origin),
             accountId: accountData?.accountId,
           },
         },
       );
-      if (linkError) throw linkError;
-      if (linkData?.error) throw new Error(linkData.error);
+
+      if (linkData && isConnectComplete(linkData)) {
+        setProfile((prev) =>
+          mergeConnectFlags(prev ?? nextProfile, {
+            stripe_account_id: accountData?.accountId ?? prev?.stripe_account_id ?? null,
+            charges_enabled: linkData.charges_enabled,
+            payouts_enabled: linkData.payouts_enabled,
+            details_submitted: linkData.details_submitted,
+            onboarding_complete: linkData.onboarding_complete,
+          }),
+        );
+        if (!linkData.url) {
+          toast.success("Stripe payouts are connected.");
+          setStarting(false);
+          return;
+        }
+      }
+
+      if (linkError || linkData?.error) {
+        throw new Error(
+          readFunctionError(linkData, linkError, "Could not open Stripe setup. Refresh payout status and try again."),
+        );
+      }
       if (!linkData?.url) throw new Error("Stripe did not return an onboarding link.");
 
       window.location.assign(linkData.url);
@@ -170,15 +242,30 @@ const ConnectPayoutsCard = () => {
           </p>
         )}
 
-        <Button
-          size="sm"
-          className="gap-1"
-          onClick={startOnboarding}
-          disabled={starting || loading || !user}
-        >
-          {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-          {CONNECT_STATUS_ACTION[status]}
-        </Button>
+        {status !== "connected" && (
+          <Button
+            size="sm"
+            className="gap-1"
+            onClick={startOnboarding}
+            disabled={starting || loading || !user}
+          >
+            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+            {CONNECT_STATUS_ACTION[status]}
+          </Button>
+        )}
+
+        {status === "connected" && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            onClick={startOnboarding}
+            disabled={starting || loading || !user}
+          >
+            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+            {CONNECT_STATUS_ACTION.connected}
+          </Button>
+        )}
       </div>
     </div>
   );
