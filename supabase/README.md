@@ -5,7 +5,7 @@ This folder versions Always Best Care **provider** Connect onboarding. Mode is t
 Hosted project: `uwgfitnpesgdkiwtekcb`.
 App URL: `https://easycare.live`.
 
-This does **not** change the franchise registration flow in `src/pages/Register.tsx` (`create-customer` / `create-payment-intent` / `create-subscription`). Hosted `charge-client` is not versioned here — keep its mobile contract (`customerId`, `amount`, `description`; optional destination). Connect transfers must **not** be added to `create-payment-intent`.
+This does **not** change the franchise registration flow in `src/pages/Register.tsx` (`create-customer` / `create-payment-intent` / `create-subscription`). `charge-client` uses the same `getStripe()` / `assertStripeSecretKey` helper as Connect (`sk_live_` or `sk_test_`). Keep its mobile contract (`customerId`, `amount`, `description`; optional destination). Connect transfers must **not** be added to `create-payment-intent`.
 
 **Do not commit real secret values. Do not invent an `sk_live_` value in source.**
 
@@ -17,6 +17,7 @@ This does **not** change the franchise registration flow in `src/pages/Register.
 | `functions/create-account-link` | Stripe AccountLink. Settings always sends `origin` + absolute `/settings?connect=return\|refresh` URLs. Falls back to `PROVIDER_APP_URL` / `SITE_URL` / `APP_URL` / `https://easycare.live`. Returns Stripe’s `livemode`. |
 | `functions/sync-connect-status` | Auth'd provider → `accounts.retrieve` → write the four flags. Settings calls this on load (also when there is no account yet, so the LIVE/TEST badge can follow the platform key). |
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. Accepts `account.updated` when `event.livemode` matches the secret key (`sk_live_` ↔ live events). |
+| `functions/charge-client` | Mobile BookingScreen charge. Same shared Stripe helper as Connect. `verify_jwt = false`. Optional destination; does not fail the charge if destination is missing. |
 | `migrations/20260915214100_provider_connect_status.sql` | Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
 
 ## LIVE cutover checklist (easycare.live)
@@ -31,6 +32,7 @@ supabase functions deploy create-connected-account --project-ref uwgfitnpesgdkiw
 supabase functions deploy create-account-link --project-ref uwgfitnpesgdkiwtekcb
 supabase functions deploy sync-connect-status --project-ref uwgfitnpesgdkiwtekcb
 supabase functions deploy stripe-connect-webhook --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy charge-client --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 ```
 
 `stripe-connect-webhook` must stay `verify_jwt = false` (see `config.toml`). Stripe signs the body; there is no user JWT.
@@ -51,12 +53,12 @@ supabase secrets set PROVIDER_APP_URL=https://easycare.live --project-ref uwgfit
    2. URL: `https://uwgfitnpesgdkiwtekcb.supabase.co/functions/v1/stripe-connect-webhook`
    3. Listen to `account.updated`.
    4. Copy the **live** signing secret into `STRIPE_WEBHOOK_SECRET` (step 3).
-5. **Redeploy** the four functions after secrets are set (same commands as step 2; webhook still `--no-verify-jwt`).
+5. **Redeploy** the functions after secrets are set (same commands as step 2; webhook and `charge-client` still `--no-verify-jwt`).
 6. **TEST connected accounts do not transfer.** `acct_…` IDs created with `sk_test_` are not valid in live. Providers must **re-onboard in live**. `create-connected-account` already creates a new account when the stored id cannot be retrieved.
 7. **charge-client (Drew / ops)** — keep destination routing intact:
    - Mobile contract stays `{ customerId, amount, description }` (`amount` = cents). Optional `connectedAccountId` / `providerUserId` / `bookingId` must keep resolving `transfer_data.destination` when present.
-   - Hosted `charge-client` shares `STRIPE_SECRET_KEY`. After the live secret is set, provider-initiated charges are **live**.
-   - If the hosted function still refuses `sk_live_` (TEST-only `getStripe()`), redeploy it with the shared helper from this PR so charges keep working. Do not change the mobile success/error shape.
+   - Uses the same shared `getStripe()` as Connect (`assertStripeSecretKey` accepts `sk_live_` or `sk_test_`). After the live secret is set, provider-initiated charges are **live**.
+   - Do not change the mobile success/error shape (`{ error }` on failure; no `error` key on success; optional `warning`).
    - Switch the hosted frontend `VITE_STRIPE_PUBLISHABLE_KEY` to the matching `pk_live_…` if Stripe.js collects cards. Do not commit that value.
 8. Confirm return/refresh URLs remain `https://easycare.live/settings?connect=return` and `https://easycare.live/settings?connect=refresh`.
 
@@ -83,6 +85,6 @@ Signed-in providers use **Settings → Connect Stripe**.
 
 ## Out of scope
 
-- Changing `charge-client`’s mobile body or destination lookup (ops keeps that intact)
+- Changing `charge-client`’s mobile body or destination lookup order
 - Client PaymentMethod / SetupIntent wiring
 - Franchise price changes in `Register.tsx`
