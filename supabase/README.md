@@ -18,7 +18,8 @@ This does **not** change the franchise registration flow in `src/pages/Register.
 | `functions/sync-connect-status` | Auth'd provider → `accounts.retrieve` → write the four flags. Settings calls this on load (also when there is no account yet, so the LIVE/TEST badge can follow the platform key). |
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. Accepts `account.updated` when `event.livemode` matches the secret key (`sk_live_` ↔ live events). |
 | `functions/charge-client` | Mobile BookingScreen charge. Same shared Stripe helper as Connect. `verify_jwt = false`. Optional destination; does not fail the charge if destination is missing. |
-| `functions/notify-provider-status` | Admin approve/reject → Resend. Approval includes Set up payouts steps and a CTA to `https://easycare.live/settings`. Rejection copy is unchanged. Uses `RESEND_API_KEY` (already in hosted secrets). |
+| `functions/notify-provider-status` | Admin approve/reject → Resend. Approval includes Set up payouts steps, a CTA to `https://easycare.live/settings`, and a light reminder to return the Agency Subscriber Agreement to `dbarbee@abc-seniors.com` if it is not already on file. Rejection copy is unchanged. Uses `RESEND_API_KEY` (already in hosted secrets). |
+| `functions/submit-provider-application` | Register.tsx after paid signup. Emails the Agency Subscriber Agreement `.docx` to the new provider via Resend (`RESEND_API_KEY` already in hosted secrets). From: `CareConnect <onboarding@resend.dev>`. Frontend already inserts `provider_applications`; this function does not write the DB. |
 | `migrations/20260915214100_provider_connect_status.sql` | Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
 
 ## LIVE cutover checklist (easycare.live)
@@ -35,6 +36,7 @@ supabase functions deploy sync-connect-status --project-ref uwgfitnpesgdkiwtekcb
 supabase functions deploy stripe-connect-webhook --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 supabase functions deploy charge-client --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 supabase functions deploy notify-provider-status --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy submit-provider-application --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
 ```
 
 `stripe-connect-webhook` must stay `verify_jwt = false` (see `config.toml`). Stripe signs the body; there is no user JWT.
@@ -84,6 +86,22 @@ Signed-in providers use **Settings → Connect Stripe**.
 3. **Set up payouts** / **Continue Stripe setup** calls `create-connected-account`, then `create-account-link` with `origin: window.location.origin` and absolute return/refresh URLs.
 4. Browser redirects to Stripe-hosted onboarding, then back to `/settings?connect=return`, which syncs again.
 5. Connected accounts hide Continue and show **Update Stripe details**.
+
+## Agency Subscriber Agreement email
+
+After **Pay & Create Account** in `src/pages/Register.tsx`, the app calls `submit-provider-application`. That function emails the new provider (`to` = registration email) from `CareConnect <onboarding@resend.dev>` with `Agency-Subscriber-Agreement.docx` attached. Copy tells them to download, sign, and return the signed file to `dbarbee@abc-seniors.com`. `RESEND_API_KEY` is already in hosted secrets — do not set secrets from this repo.
+
+The `.docx` is bundled with the function (not browser Resend, not a new from-domain):
+
+1. Replace `functions/submit-provider-application/assets/Agency-Subscriber-Agreement.docx` with the new Word file (keep that filename).
+2. Run `npm run encode-agency-agreement` so `agreementAttachment.ts` matches the file (tests fail if they drift).
+3. Deploy:
+
+```bash
+supabase functions deploy submit-provider-application --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+```
+
+Approval mail (`notify-provider-status`) only reminds providers to return the signed agreement if they have not already. Redeploy that function too if you change the reminder copy.
 
 ## Out of scope
 
