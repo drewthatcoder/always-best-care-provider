@@ -21,6 +21,7 @@ import {
   SERVICE_DETAILS,
   emptyPricingFormValues,
   pricingFormSchema,
+  readPricingQueryPrefill,
   toServicePricingPayload,
 } from "./servicePricing";
 
@@ -213,6 +214,20 @@ describe("service pricing email", () => {
     expect(payload.to).toEqual(["techsupport@cityoftreestech.com"]);
     expect(payload.reply_to).toBe("jordan@example.com");
     expect(payload.subject).toBe("Service pricing from Jordan <script>alert(1)</script>");
+  });
+});
+
+describe("pricing form query prefill", () => {
+  it("reads name and email from the approval link", () => {
+    expect(readPricingQueryPrefill("?name=Jordan+Lee&email=jordan%40example.com")).toEqual({
+      name: "Jordan Lee",
+      email: "jordan@example.com",
+    });
+    expect(readPricingQueryPrefill("name=Jordan+Lee&email=a%26b%40example.com")).toEqual({
+      name: "Jordan Lee",
+      email: "a&b@example.com",
+    });
+    expect(readPricingQueryPrefill("")).toEqual({ name: "", email: "" });
   });
 });
 

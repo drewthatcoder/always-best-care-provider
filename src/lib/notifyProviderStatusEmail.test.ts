@@ -3,10 +3,13 @@ import {
   AGREEMENT_RETURN_EMAIL,
   APPROVAL_SUBJECT,
   EMAIL_FROM,
+  PRICING_FORM_URL,
   REJECTION_SUBJECT,
   SETTINGS_URL,
   SUPPORT_EMAIL,
+  approvalHtml,
   isProviderStatus,
+  pricingFormUrl,
   providerStatusHtml,
   providerStatusSubject,
   rejectionHtml,
@@ -48,6 +51,25 @@ describe("notify-provider-status email", () => {
     expect(html).toContain(`mailto:${AGREEMENT_RETURN_EMAIL}`);
     expect(html).toContain(AGREEMENT_RETURN_EMAIL);
     expect(html).not.toContain("lovable.app");
+
+    const payoutsLink = html.indexOf(`href="${SETTINGS_URL}"`);
+    const pricesHeading = html.indexOf("Set your service prices");
+    const agreement = html.indexOf("Agency Subscriber Agreement");
+    expect(html).toContain("Enter your price for each of the 8 services for every zip code you serve.");
+    expect(html).toContain(`href="${PRICING_FORM_URL}?name=Jordan"`);
+    expect(pricesHeading).toBeGreaterThan(payoutsLink);
+    expect(agreement).toBeGreaterThan(pricesHeading);
+  });
+
+  it("prefills the pricing form link with the provider name and email", () => {
+    const url = pricingFormUrl({ name: "Jordan Lee", email: "jordan@example.com" });
+    expect(url).toBe(`${PRICING_FORM_URL}?name=Jordan+Lee&email=jordan%40example.com`);
+
+    const html = approvalHtml("Jordan", { lastName: "Lee", email: "a&b@example.com" });
+    expect(html).toContain(
+      `href="${PRICING_FORM_URL}?name=Jordan+Lee&amp;email=a%26b%40example.com"`,
+    );
+    expect(html).toContain("Set your service prices");
   });
 
   it("leaves the hosted rejection copy unchanged", () => {
@@ -60,5 +82,10 @@ describe("notify-provider-status email", () => {
     expect(rejectionHtml("Jordan")).not.toContain("Stripe");
     expect(rejectionHtml("Jordan")).not.toContain(AGREEMENT_RETURN_EMAIL);
     expect(rejectionHtml("Jordan")).not.toContain("Agency Subscriber Agreement");
+    expect(providerStatusHtml("rejected", "Jordan", { email: "jordan@example.com", lastName: "Lee" })).toBe(
+      rejectionHtml("Jordan"),
+    );
+    expect(rejectionHtml("Jordan")).not.toContain("Set your service prices");
+    expect(rejectionHtml("Jordan")).not.toContain("pricing-form");
   });
 });

@@ -137,6 +137,23 @@ export function toServicePricingPayload(values: PricingFormValues) {
   };
 }
 
+/** Read `?name=&email=` from the approval-email link. Caps match the form limits. */
+export function readPricingQueryPrefill(search: string): { name: string; email: string } {
+  const params = new URLSearchParams(search);
+  const name = (params.get("name") ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, MAX_NAME_LENGTH);
+  const email = (params.get("email") ?? "").replace(/[\r\n]+/g, "").trim().slice(0, MAX_EMAIL_LENGTH);
+  return { name, email };
+}
+
+export function applyPricingQueryPrefill(values: PricingFormValues, search: string): PricingFormValues {
+  const query = readPricingQueryPrefill(search);
+  return {
+    ...values,
+    providerName: query.name || values.providerName,
+    email: query.email || values.email,
+  };
+}
+
 export async function readPricingInvokeError(data: unknown, error: unknown): Promise<string> {
   const direct = readFunctionError(data, error, "");
   if (direct) return direct;

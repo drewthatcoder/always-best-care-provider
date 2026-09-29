@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import { useFieldArray, useForm, type FieldPath, type UseFormReturn } from "react-hook-form";
+import { useSearchParams } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Logo from "@/components/Logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,9 +17,11 @@ import {
   MAX_ZIP_CODES,
   PRICING_SERVICES,
   SERVICE_DETAILS,
+  applyPricingQueryPrefill,
   emptyPricingFormValues,
   emptyZipBlock,
   pricingFormSchema,
+  readPricingQueryPrefill,
   readPricingInvokeError,
   toServicePricingPayload,
   type PricingFormValues,
@@ -66,13 +69,15 @@ async function prefillPricingForm(
 
 const PricingForm = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const querySearch = searchParams.toString();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<PricingFormValues>({
     resolver: zodResolver(pricingFormSchema),
-    defaultValues: emptyPricingFormValues(),
+    defaultValues: applyPricingQueryPrefill(emptyPricingFormValues(), querySearch),
     mode: "onSubmit",
   });
 
@@ -81,6 +86,12 @@ const PricingForm = () => {
   useEffect(() => {
     document.title = "Service pricing | Always Best Care";
   }, []);
+
+  useEffect(() => {
+    const query = readPricingQueryPrefill(querySearch);
+    if (query.email && !form.getValues("email").trim()) form.setValue("email", query.email);
+    if (query.name && !form.getValues("providerName").trim()) form.setValue("providerName", query.name);
+  }, [querySearch, form]);
 
   useEffect(() => {
     if (!user) return;
@@ -114,10 +125,12 @@ const PricingForm = () => {
   };
 
   const startOver = () => {
-    const next = emptyPricingFormValues();
-    if (user?.email) next.email = user.email;
-    const name = user ? metadataName(user) : "";
-    if (name) next.providerName = name;
+    const next = applyPricingQueryPrefill(emptyPricingFormValues(), querySearch);
+    if (!next.email && user?.email) next.email = user.email;
+    if (!next.providerName && user) {
+      const name = metadataName(user);
+      if (name) next.providerName = name;
+    }
     form.reset(next);
     setSubmitted(false);
     setServerError(null);
