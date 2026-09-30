@@ -150,6 +150,9 @@ describe('booking notification migration', () => {
     expect(migration).toContain('execute function public.notify_on_booking_change()');
     expect(migration).toContain('supabase_realtime add table public.notifications');
     expect(migration).toContain('Users can read their own roles');
+    expect(migration).toContain('create function public.has_role(_user_id uuid, _role text)');
+    expect(migration).toContain("public.has_role(_user_id => auth.uid(), _role => 'admin')");
+    expect(migration).not.toContain('app_role');
     expect(migration).toContain('user_id = auth.uid()');
     expect(migration).toContain('public.report_booking_problem');
     expect(migration).toContain('public.notify_client_requests_call');

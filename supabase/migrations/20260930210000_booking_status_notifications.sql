@@ -12,8 +12,10 @@
 -- Safe to re-run.
 
 -- ---------------------------------------------------------------------------
--- has_role: create only when missing. Live Admin Login already calls
--- has_role(_user_id, _role). Do not replace an existing overload.
+-- user_roles.role is text. Production already has has_role(_user_id uuid, _role text).
+-- Create that signature only when has_role is missing. Do not replace the live function.
+-- Re-run this file so report_booking_problem and notify_client_requests_call
+-- pass a text role into has_role.
 -- ---------------------------------------------------------------------------
 do $ensure_has_role$
 begin
@@ -25,7 +27,7 @@ begin
       and p.proname = 'has_role'
   ) then
     execute $create_has_role$
-      create function public.has_role(_user_id uuid, _role public.app_role)
+      create function public.has_role(_user_id uuid, _role text)
       returns boolean
       language sql
       stable
@@ -373,7 +375,7 @@ begin
   end if;
 
   if not (
-    public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role)
+    public.has_role(_user_id => auth.uid(), _role => 'admin')
     or v_booking.client_user_id = auth.uid()
     or v_booking.provider_user_id = auth.uid()
     or exists (
@@ -423,7 +425,7 @@ begin
   end if;
 
   if v_booking.client_user_id is distinct from auth.uid()
-     and not public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role)
+     and not public.has_role(_user_id => auth.uid(), _role => 'admin')
   then
     raise exception 'Not allowed';
   end if;

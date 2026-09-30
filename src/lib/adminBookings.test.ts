@@ -83,7 +83,9 @@ describe('admin bookings migration', () => {
     expect(sql).toContain('Admins can select bookings');
     expect(sql).toContain('Admins can update bookings');
     expect(sql).toContain('Admins can delete bookings');
-    expect(sql).toContain("public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role)");
+    expect(sql).toContain("public.has_role(_user_id => auth.uid(), _role => 'admin')");
+    expect(sql).toContain('create function public.has_role(_user_id uuid, _role text)');
+    expect(sql).not.toContain('app_role');
     expect(sql).toContain('for select');
     expect(sql).toContain('for update');
     expect(sql).toContain('for delete');

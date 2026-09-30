@@ -1,8 +1,8 @@
 -- Admin access to every booking (including null client_zip_code rows that
 -- providers cannot see) plus contact lookup for the /admin/bookings page.
 --
--- Do NOT run this against production until the PR is approved.
--- Apply 20260930210000_booking_status_notifications.sql first (has_role).
+-- user_roles.role is text. Calls has_role(_user_id uuid, _role text).
+-- Re-run 20260930210000 first so its RPCs pass a text role, then run this file.
 --
 -- Run in the Supabase SQL Editor for project uwgfitnpesgdkiwtekcb.
 -- Safe to re-run.
@@ -17,7 +17,7 @@ begin
       and p.proname = 'has_role'
   ) then
     execute $create_has_role$
-      create function public.has_role(_user_id uuid, _role public.app_role)
+      create function public.has_role(_user_id uuid, _role text)
       returns boolean
       language sql
       stable
@@ -43,22 +43,22 @@ create policy "Admins can select bookings"
   on public.bookings
   for select
   to authenticated
-  using (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role));
+  using (public.has_role(_user_id => auth.uid(), _role => 'admin'));
 
 drop policy if exists "Admins can update bookings" on public.bookings;
 create policy "Admins can update bookings"
   on public.bookings
   for update
   to authenticated
-  using (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role))
-  with check (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role));
+  using (public.has_role(_user_id => auth.uid(), _role => 'admin'))
+  with check (public.has_role(_user_id => auth.uid(), _role => 'admin'));
 
 drop policy if exists "Admins can delete bookings" on public.bookings;
 create policy "Admins can delete bookings"
   on public.bookings
   for delete
   to authenticated
-  using (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role));
+  using (public.has_role(_user_id => auth.uid(), _role => 'admin'));
 
 -- Extra SELECT only. Does not enable RLS and does not replace existing policies.
 -- If RLS is already on, admins can read rows. If RLS is off, these policies are inert.
@@ -67,14 +67,14 @@ create policy "Admins can read profiles"
   on public.profiles
   for select
   to authenticated
-  using (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role));
+  using (public.has_role(_user_id => auth.uid(), _role => 'admin'));
 
 drop policy if exists "Admins can read provider zip codes" on public.provider_zip_codes;
 create policy "Admins can read provider zip codes"
   on public.provider_zip_codes
   for select
   to authenticated
-  using (public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role));
+  using (public.has_role(_user_id => auth.uid(), _role => 'admin'));
 
 -- Email lives on auth.users, which the browser cannot read. Admins only.
 create or replace function public.admin_user_contacts(p_user_ids uuid[])
@@ -91,7 +91,7 @@ set search_path = public
 as $fn$
 begin
   if auth.uid() is null
-     or not public.has_role(_user_id => auth.uid(), _role => 'admin'::public.app_role)
+     or not public.has_role(_user_id => auth.uid(), _role => 'admin')
   then
     raise exception 'Not allowed';
   end if;
