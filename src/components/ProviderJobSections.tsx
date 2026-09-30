@@ -71,7 +71,7 @@ const ProviderJobSections = ({ loading, upcomingRequests, myJobs, onJobClick }: 
         <CardContent className="p-4 pt-0">
           {myJobs.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
-              No confirmed or in-progress jobs yet.
+              No assigned jobs yet. Shifts you confirm will appear here.
             </p>
           ) : (
             <div className="space-y-3">

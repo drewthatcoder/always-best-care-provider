@@ -31,8 +31,33 @@ export interface BookingRow {
 
 export type ClientNameMap = Record<string, { first_name: string | null; last_name: string | null }>;
 
-/** Statuses that count as "my jobs" once a booking is assigned to the provider. */
-export const MY_JOB_STATUSES = ['confirmed', 'in-progress'] as const;
+/**
+ * Statuses that count as "my jobs" once a booking is assigned to the provider.
+ * - pending_client: provider confirmed a slot (JobDetailsSheet), waiting on the client
+ * - approved: client approved the shift (ClientPendingShifts) — the session is booked
+ * - confirmed / in-progress: legacy / active states
+ */
+export const MY_JOB_STATUSES = ['approved', 'pending_client', 'confirmed', 'in-progress'] as const;
+
+/** Human-readable status labels shown as badges on provider job cards / details. */
+export const JOB_STATUS_LABELS: Record<string, string> = {
+  upcoming: 'Open request',
+  pending_client: 'Awaiting client approval',
+  approved: 'Approved',
+  confirmed: 'Confirmed',
+  'in-progress': 'In progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  pending_admin: 'Awaiting admin',
+};
+
+export const jobStatusLabel = (status: string): string => JOB_STATUS_LABELS[status] ?? status;
+
+/**
+ * Only open (status 'upcoming') requests can be confirmed by a provider.
+ * Shifts already sent to / approved by the client must not show "Confirm Shift" again.
+ */
+export const canConfirmShift = (status: string): boolean => status === 'upcoming';
 
 /** Local calendar date (yyyy-MM-dd) used to hide past-dated upcoming requests. */
 export const todayIsoDate = (now: Date = new Date()): string => format(now, 'yyyy-MM-dd');
@@ -52,15 +77,21 @@ export const selectUpcomingRequests = (rows: BookingRow[], today: string): Booki
     .filter((b) => b.status === 'upcoming' && !b.provider_user_id && b.scheduled_date >= today)
     .sort(byScheduledDateAsc);
 
-/** Bookings assigned to this provider that are confirmed or in progress. Sorted by date asc. */
-export const selectMyJobs = (rows: BookingRow[], providerUserId: string): BookingRow[] =>
-  rows
-    .filter(
-      (b) =>
-        b.provider_user_id === providerUserId &&
-        (MY_JOB_STATUSES as readonly string[]).includes(b.status),
-    )
-    .sort(byScheduledDateAsc);
+/**
+ * Bookings assigned to this provider in any active state (approved, awaiting client,
+ * confirmed, in progress). Today/future shifts come first in ascending date order,
+ * followed by past-dated ones (most recent first).
+ */
+export const selectMyJobs = (rows: BookingRow[], providerUserId: string, today: string = todayIsoDate()): BookingRow[] => {
+  const mine = rows.filter(
+    (b) =>
+      b.provider_user_id === providerUserId &&
+      (MY_JOB_STATUSES as readonly string[]).includes(b.status),
+  );
+  const upcoming = mine.filter((b) => b.scheduled_date >= today).sort(byScheduledDateAsc);
+  const past = mine.filter((b) => b.scheduled_date < today).sort((a, b) => byScheduledDateAsc(b, a));
+  return [...upcoming, ...past];
+};
 
 export const mapBookingToJob = (b: BookingRow, profiles: ClientNameMap = {}): Job => {
   const profile = profiles[b.client_user_id];

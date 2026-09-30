@@ -21,7 +21,8 @@ interface UseProviderJobsOptions {
  * Loads the provider's application status plus two job lists:
  * - upcomingRequests: unassigned 'upcoming' bookings (RLS scopes to the provider's zip codes),
  *   dated today or later, sorted by scheduled_date ascending.
- * - myJobs: bookings assigned to this provider with status confirmed / in-progress.
+ * - myJobs: bookings assigned to this provider with status approved / pending_client /
+ *   confirmed / in-progress; today & future first, sorted by date.
  */
 export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {}) => {
   const { user } = useAuth();
@@ -81,7 +82,7 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
 
       // Re-apply the filters client-side so the lists stay correct regardless of query shape.
       const upcomingRows = selectUpcomingRequests((upcomingRes.data as unknown as BookingRow[]) || [], today);
-      const myRows = selectMyJobs((mineRes.data as unknown as BookingRow[]) || [], user.id);
+      const myRows = selectMyJobs((mineRes.data as unknown as BookingRow[]) || [], user.id, today);
 
       const clientIds = [...new Set([...upcomingRows, ...myRows].map((b) => b.client_user_id).filter(Boolean))];
       const profileMap: ClientNameMap = {};
