@@ -1,106 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clock, LogOut } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
-import JobCard, { type Job } from '@/components/JobCard';
+import { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
-import { useAuth } from '@/hooks/useAuth';
+import ProviderJobSections from '@/components/ProviderJobSections';
+import { useProviderJobs } from '@/hooks/useProviderJobs';
 import { supabase } from '@/integrations/supabase/client';
-import { format } from 'date-fns';
 
 const ProviderDashboard = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(true);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loadingJobs, setLoadingJobs] = useState(true);
-
-  useEffect(() => {
-    const checkApplicationStatus = async () => {
-      if (!user) { setCheckingStatus(false); return; }
-      const { data, error } = await supabase
-        .from('provider_applications')
-        .select('status')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (!error && data) setApplicationStatus(data.status);
-      setCheckingStatus(false);
-    };
-    checkApplicationStatus();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || checkingStatus) return;
-    if (applicationStatus && applicationStatus !== 'approved') { setLoadingJobs(false); return; }
-
-    const fetchJobs = async () => {
-      setLoadingJobs(true);
-      const { data: bookings, error } = await supabase
-        .from('bookings' as any)
-        .select('*')
-        .in('status', ['upcoming', 'in-progress', 'confirmed'])
-        .order('scheduled_date', { ascending: true });
-
-      if (error) { console.error('Error fetching bookings:', error); setLoadingJobs(false); return; }
-      if (!bookings || bookings.length === 0) { setJobs([]); setLoadingJobs(false); return; }
-
-      const clientIds = [...new Set((bookings as any[]).map((b: any) => b.client_user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, first_name, last_name')
-        .in('user_id', clientIds);
-
-      const profileMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
-      (profiles || []).forEach((p: any) => { profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name }; });
-
-      const mapped: Job[] = (bookings as any[]).map((b: any) => {
-        const profile = profileMap[b.client_user_id];
-        const dateObj = new Date(b.scheduled_date + 'T00:00:00');
-        return {
-          id: b.id,
-          date: format(dateObj, 'EEE MMM dd yyyy').toUpperCase(),
-          startTime: b.start_time,
-          endTime: b.end_time,
-          clientFirstName: profile?.first_name ?? undefined,
-          clientLastName: profile?.last_name ?? undefined,
-          service: b.service,
-          clientZipCode: b.client_zip_code ?? undefined,
-          status: b.status as Job['status'],
-          providerViewed: b.provider_viewed ?? false,
-          clientPhone: b.client_phone ?? undefined,
-          clientAddress: b.client_address ?? undefined,
-          clientAddressLine2: b.client_address_line2 ?? undefined,
-          clientCity: b.client_city ?? undefined,
-          clientState: b.client_state ?? undefined,
-          clientDateOfBirth: b.client_date_of_birth ?? undefined,
-          clientHeight: b.client_height ?? undefined,
-          clientWeight: b.client_weight ?? undefined,
-          clientResponsibleParty: b.client_responsible_party ?? undefined,
-          clientResponsiblePartyName: b.client_responsible_party_name ?? undefined,
-          clientResponsiblePartyEmail: b.client_responsible_party_email ?? undefined,
-          clientAdditionalInfo: b.client_additional_info ?? undefined,
-          clientRecurringWeekly: b.client_recurring_weekly ?? undefined,
-          notes: b.notes ?? undefined,
-        };
-      });
-
-      setJobs(mapped);
-      setLoadingJobs(false);
-    };
-
-    fetchJobs();
-  }, [user, checkingStatus, applicationStatus]);
+  const {
+    applicationStatus,
+    checkingStatus,
+    loadingJobs,
+    upcomingRequests,
+    myJobs,
+    markViewed,
+    handleConfirmed,
+  } = useProviderJobs();
 
   const handleJobClick = async (job: Job) => {
     setSelectedJob(job);
     setSheetOpen(true);
-    if (!job.providerViewed) {
-      await supabase.from('bookings' as any).update({ provider_viewed: true }).eq('id', job.id);
-      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, providerViewed: true } : j)));
-    }
+    await markViewed(job);
   };
 
   const handleLogout = async () => {
@@ -158,7 +83,7 @@ const ProviderDashboard = () => {
     <div className="min-h-screen bg-background pb-20">
       <div className="care-gradient pt-12 pb-6 px-6">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <h1 className="text-xl font-semibold text-white">My Jobs</h1>
+          <h1 className="text-xl font-semibold text-white">Dashboard</h1>
           <button
             onClick={handleLogout}
             className="flex items-center gap-2 text-sm font-medium bg-white/15 hover:bg-white/25 text-white px-4 py-2 rounded-lg transition-colors"
@@ -170,24 +95,15 @@ const ProviderDashboard = () => {
       </div>
 
       <div className="px-4 pt-6">
-        {loadingJobs ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading jobs...</p>
-          </div>
-        ) : jobs.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">No jobs available in your territory.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
-            ))}
-          </div>
-        )}
+        <ProviderJobSections
+          loading={loadingJobs}
+          upcomingRequests={upcomingRequests}
+          myJobs={myJobs}
+          onJobClick={handleJobClick}
+        />
       </div>
 
-      <JobDetailsSheet job={selectedJob} open={sheetOpen} onOpenChange={setSheetOpen} />
+      <JobDetailsSheet job={selectedJob} open={sheetOpen} onOpenChange={setSheetOpen} onConfirm={handleConfirmed} />
       <BottomNav />
     </div>
   );
