@@ -1,5 +1,6 @@
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { jobStatusLabel } from '@/lib/providerJobs';
 
 export interface Job {
   id: string;
@@ -48,9 +49,22 @@ const JobCard = ({ job, onClick }: JobCardProps) => {
     'approved': 'border-l-success',
   };
 
+  const statusBadgeStyles: Partial<Record<Job['status'], string>> = {
+    approved: 'bg-success/15 text-success border-success/30',
+    confirmed: 'bg-success/15 text-success border-success/30',
+    pending_client: 'bg-care-orange/15 text-care-orange border-care-orange/30',
+    pending_admin: 'bg-care-orange/15 text-care-orange border-care-orange/30',
+    'in-progress': 'bg-care-orange/15 text-care-orange border-care-orange/30',
+    completed: 'bg-muted text-muted-foreground border-border',
+    cancelled: 'bg-muted text-muted-foreground border-border',
+  };
+  // Open requests are already grouped under "Upcoming requests"; assigned jobs get an explicit badge.
+  const showStatusBadge = job.status !== 'upcoming';
+
   return (
     <div
       onClick={onClick}
+      data-status={job.status}
       className={cn(
         "bg-card rounded-lg border border-border p-4 cursor-pointer",
         "hover:shadow-md transition-shadow",
@@ -85,6 +99,17 @@ const JobCard = ({ job, onClick }: JobCardProps) => {
         </div>
         
         <div className="text-right space-y-1">
+          {showStatusBadge && (
+            <span
+              data-testid="job-status-badge"
+              className={cn(
+                'inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
+                statusBadgeStyles[job.status] ?? 'bg-muted text-muted-foreground border-border',
+              )}
+            >
+              {jobStatusLabel(job.status)}
+            </span>
+          )}
           {(job.clientFirstName || job.clientLastName || job.clientName) && (
             <>
               <p className="text-sm font-semibold text-foreground">

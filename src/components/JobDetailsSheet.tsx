@@ -25,6 +25,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Job } from './JobCard';
+import { canConfirmShift, jobStatusLabel } from '@/lib/providerJobs';
 
 interface JobDetailsSheetProps {
   job: Job | null;
@@ -280,7 +281,7 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
             <div className="bg-white/10 rounded-xl p-4 space-y-3">
               <h3 className="text-sm font-semibold text-white/90 uppercase tracking-wide">Schedule</h3>
               <InfoRow icon={Calendar} label="Date" value={job.date} />
-              <InfoRow icon={Clock} label="Available Hours" value={`${job.startTime} – ${job.endTime}`} />
+              <InfoRow icon={Clock} label={canConfirmShift(job.status) ? 'Available Hours' : 'Shift Time'} value={`${job.startTime} – ${job.endTime}`} />
               {job.service && <InfoRow icon={FileText} label="Service" value={job.service} />}
               {job.clientRecurringWeekly && <InfoRow icon={RefreshCw} label="Recurring" value={job.clientRecurringWeekly} />}
             </div>
@@ -334,8 +335,21 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
 
             {/* Action Buttons */}
             <div className="space-y-3 pt-4">
-              {/* Confirm Shift */}
-              {job.status === 'upcoming' && (
+              {/* Confirm Shift — only for open requests, never for shifts already sent to / approved by the client */}
+              {!canConfirmShift(job.status) && (
+                <div
+                  data-testid="job-status-note"
+                  className="bg-white/10 rounded-xl p-3 text-sm text-white/90 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    Status: <span className="font-semibold">{jobStatusLabel(job.status)}</span>
+                    {job.status === 'pending_client' && ' — waiting for the client to approve this shift.'}
+                    {job.status === 'approved' && ' — the client approved this shift. The session is booked.'}
+                  </span>
+                </div>
+              )}
+              {canConfirmShift(job.status) && (
                 <Button
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={() => {

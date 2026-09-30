@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MY_JOB_STATUSES,
+  canConfirmShift,
+  jobStatusLabel,
   mapBookingToJob,
   selectMyJobs,
   selectUpcomingRequests,
@@ -46,15 +49,67 @@ describe('selectUpcomingRequests', () => {
 });
 
 describe('selectMyJobs', () => {
-  it('keeps confirmed / in-progress bookings assigned to the provider', () => {
+  it('keeps approved / pending_client / confirmed / in-progress bookings assigned to the provider', () => {
     const rows = [
       row({ id: 'mine-confirmed', provider_user_id: ME, status: 'confirmed', scheduled_date: '2026-10-05' }),
       row({ id: 'mine-inprog', provider_user_id: ME, status: 'in-progress', scheduled_date: '2026-10-01' }),
-      row({ id: 'mine-pending', provider_user_id: ME, status: 'pending_client' }),
-      row({ id: 'other', provider_user_id: 'other', status: 'confirmed' }),
+      row({ id: 'mine-pending', provider_user_id: ME, status: 'pending_client', scheduled_date: '2026-10-03' }),
+      row({ id: 'mine-approved', provider_user_id: ME, status: 'approved', scheduled_date: '2026-10-07' }),
+      row({ id: 'mine-cancelled', provider_user_id: ME, status: 'cancelled', scheduled_date: '2026-10-02' }),
+      row({ id: 'other-approved', provider_user_id: 'other', status: 'approved' }),
+      row({ id: 'unassigned-approved', provider_user_id: null, status: 'approved' }),
       row({ id: 'open', status: 'upcoming' }),
     ];
-    expect(selectMyJobs(rows, ME).map((r) => r.id)).toEqual(['mine-inprog', 'mine-confirmed']);
+    expect(selectMyJobs(rows, ME, TODAY).map((r) => r.id)).toEqual([
+      'mine-inprog',
+      'mine-pending',
+      'mine-confirmed',
+      'mine-approved',
+    ]);
+  });
+
+  it('includes the production case: approved Oct 07 2026 5-6 PM shift assigned to me', () => {
+    const approved = row({
+      id: '4c5420b6',
+      provider_user_id: ME,
+      status: 'approved',
+      scheduled_date: '2026-10-07',
+      start_time: '5:00 PM',
+      end_time: '6:00 PM',
+      client_zip_code: '99988',
+    });
+    expect(selectMyJobs([approved], ME, TODAY).map((r) => r.id)).toEqual(['4c5420b6']);
+  });
+
+  it('lists today/future shifts first (ascending), then past shifts (most recent first)', () => {
+    const rows = [
+      row({ id: 'past-old', provider_user_id: ME, status: 'approved', scheduled_date: '2026-09-01' }),
+      row({ id: 'future', provider_user_id: ME, status: 'approved', scheduled_date: '2026-10-07' }),
+      row({ id: 'past-recent', provider_user_id: ME, status: 'confirmed', scheduled_date: '2026-09-28' }),
+      row({ id: 'today', provider_user_id: ME, status: 'pending_client', scheduled_date: TODAY }),
+    ];
+    expect(selectMyJobs(rows, ME, TODAY).map((r) => r.id)).toEqual(['today', 'future', 'past-recent', 'past-old']);
+  });
+
+  it('queries the same statuses it filters on', () => {
+    expect([...MY_JOB_STATUSES]).toEqual(['approved', 'pending_client', 'confirmed', 'in-progress']);
+  });
+});
+
+describe('job status helpers', () => {
+  it('labels assigned statuses for badges', () => {
+    expect(jobStatusLabel('approved')).toBe('Approved');
+    expect(jobStatusLabel('pending_client')).toBe('Awaiting client approval');
+    expect(jobStatusLabel('confirmed')).toBe('Confirmed');
+    expect(jobStatusLabel('in-progress')).toBe('In progress');
+    expect(jobStatusLabel('something_new')).toBe('something_new');
+  });
+
+  it('only allows confirming open requests', () => {
+    expect(canConfirmShift('upcoming')).toBe(true);
+    for (const s of ['approved', 'pending_client', 'confirmed', 'in-progress']) {
+      expect(canConfirmShift(s)).toBe(false);
+    }
   });
 });
 
