@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clock, LogOut } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
+import CallAlwaysBestCareButton from '@/components/CallAlwaysBestCareButton';
+import NotificationBell from '@/components/NotificationBell';
 import { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
 import ProviderJobSections from '@/components/ProviderJobSections';
@@ -45,11 +47,17 @@ const ProviderDashboard = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <header className="care-gradient safe-area-top">
-          <div className="max-w-md mx-auto px-6 py-6 flex items-center justify-between">
+          <div className="max-w-md mx-auto px-6 py-6 flex items-center justify-between gap-3">
             <h1 className="text-xl font-bold text-primary-foreground">Application Status</h1>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-3 py-2 rounded-lg transition-colors">
-              <LogOut className="w-4 h-4" /> Logout
-            </button>
+            <div className="flex items-center gap-2">
+              <NotificationBell to="/provider-notifications" />
+              <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-3 py-2 rounded-lg transition-colors">
+                <LogOut className="w-4 h-4" /> Logout
+              </button>
+            </div>
+          </div>
+          <div className="max-w-md mx-auto px-6 pb-6">
+            <CallAlwaysBestCareButton tone="on-primary" />
           </div>
         </header>
         <div className="flex-1 flex items-center justify-center px-6">
@@ -81,17 +89,24 @@ const ProviderDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      <div className="care-gradient pt-12 pb-6 px-6">
+      <div className="care-gradient pt-12 pb-6 px-6" data-testid="provider-dashboard-header">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
           <h1 className="text-xl font-semibold text-white">Dashboard</h1>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-sm font-medium bg-white/15 hover:bg-white/25 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell to="/provider-notifications" />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 text-sm font-medium bg-white/15 hover:bg-white/25 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div className="px-4 pt-4 max-w-4xl mx-auto">
+        <CallAlwaysBestCareButton tone="solid" />
       </div>
 
       <div className="px-4 pt-6">

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { userIsAdmin } from '@/lib/adminAccess';
 
 // Generic notifications page that redirects based on user role
 const Notifications = () => {
@@ -13,14 +14,9 @@ const Notifications = () => {
     if (!user) return;
 
     const checkRole = async () => {
-      const { data } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id);
+      const isAdmin = await userIsAdmin(user.id);
 
-      const roles = (data || []).map((r) => r.role);
-
-      if (roles.includes('admin')) {
+      if (isAdmin) {
         navigate('/admin/notifications', { replace: true });
       } else {
         // Check if provider by looking for provider_applications

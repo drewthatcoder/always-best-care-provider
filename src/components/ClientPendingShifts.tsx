@@ -125,15 +125,7 @@ const ClientPendingShifts = () => {
         .eq('id', shift.id);
       if (error) throw error;
 
-      // Notify provider that client approved
-      if (shift.provider_user_id) {
-        await supabase.from('notifications').insert({
-          user_id: shift.provider_user_id,
-          title: '✅ Client Approved Your Shift',
-          body: `The ${shift.service} shift on ${format(new Date(shift.scheduled_date + 'T00:00:00'), 'MMM dd, yyyy')} (${shift.start_time} – ${shift.end_time}) has been approved. The session is now booked!`,
-        });
-      }
-
+      // The assigned provider and admins are notified by the bookings status trigger.
       toast.success('Shift approved! Session is now booked.');
       setShifts((prev) => prev.filter(s => s.id !== shift.id));
     } catch (err) {
@@ -168,15 +160,7 @@ const ClientPendingShifts = () => {
         .eq('id', shift.id);
       if (error) throw error;
 
-      // Notify the provider about the client's preferred time
-      if (shift.provider_user_id) {
-        await supabase.from('notifications').insert({
-          user_id: shift.provider_user_id,
-          title: '🔄 Client Requested a Different Time',
-          body: `The client wasn't available for the ${shift.service} shift on ${format(new Date(shift.scheduled_date + 'T00:00:00'), 'MMM dd, yyyy')}. They prefer ${selectedAltTime}. The shift is back in your available jobs.`,
-        });
-      }
-
+      // Previous provider is notified by the bookings status trigger (pending_client -> upcoming).
       toast.success('Alternative time sent to provider');
       setShifts((prev) => prev.filter(s => s.id !== shift.id));
       setDecliningShiftId(null);
@@ -265,15 +249,16 @@ const ClientPendingShifts = () => {
                   onClick={async () => {
                     setDecliningShiftId(shift.id);
                     setSelectedAltTime('');
-                    // Send notification to provider to call the client
                     if (shift.provider_user_id) {
-                      const phoneDisplay = shift.client_phone || 'phone number on file';
-                      await supabase.from('notifications').insert({
-                        user_id: shift.provider_user_id,
-                        title: '📞 Client Requests a Call',
-                        body: `The client has declined the ${shift.service} shift on ${format(new Date(shift.scheduled_date + 'T00:00:00'), 'MMM dd, yyyy')} (${shift.start_time} – ${shift.end_time}). Please call them at ${phoneDisplay} to discuss scheduling.`,
+                      const { error } = await supabase.rpc('notify_client_requests_call', {
+                        p_booking_id: shift.id,
                       });
-                      toast.success('Provider has been notified to call you.');
+                      if (error) {
+                        console.error(error);
+                        toast.error('Could not notify the provider to call you');
+                      } else {
+                        toast.success('Provider has been notified to call you.');
+                      }
                     }
                   }}
                   disabled={updating === shift.id}

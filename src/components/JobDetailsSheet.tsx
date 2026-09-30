@@ -26,6 +26,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Job } from './JobCard';
 import { canConfirmShift, jobStatusLabel } from '@/lib/providerJobs';
+import CallAlwaysBestCareButton from '@/components/CallAlwaysBestCareButton';
 
 interface JobDetailsSheetProps {
   job: Job | null;
@@ -132,23 +133,7 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
         .eq('id', job.id);
       if (error) throw error;
 
-      // Notify client
-      if (job.id) {
-        const { data: booking } = await supabase
-          .from('bookings')
-          .select('client_user_id')
-          .eq('id', job.id)
-          .single();
-
-        if (booking?.client_user_id) {
-          await supabase.from('notifications').insert({
-            user_id: booking.client_user_id,
-            title: '📋 A Provider Has Confirmed Your Shift',
-            body: `Your ${job.service || 'care'} shift on ${job.date} has been confirmed for ${selectedTimeSlot}. Please review and approve.`,
-          });
-        }
-      }
-
+      // The client is notified by the bookings status trigger (upcoming -> pending_client).
       toast.success('Shift sent to client for approval!');
       onConfirm?.(job.id);
       setShowTimeDialog(false);
@@ -172,20 +157,11 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const { data: admins } = await supabase
-        .from('user_roles')
-        .select('user_id')
-        .eq('role', 'admin');
-
-      if (admins && admins.length > 0) {
-        const notifications = admins.map((admin) => ({
-          user_id: admin.user_id,
-          title: '⚠️ Provider Reported a Problem',
-          body: `Job on ${job.date} for ${fullName}: ${problemMessage.trim()}`,
-        }));
-        const { error } = await supabase.from('notifications').insert(notifications);
-        if (error) throw error;
-      }
+      const { error } = await supabase.rpc('report_booking_problem', {
+        p_booking_id: job.id,
+        p_message: problemMessage.trim(),
+      });
+      if (error) throw error;
 
       toast.success('Problem reported to admin team');
       setProblemMessage('');
@@ -335,6 +311,7 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
 
             {/* Action Buttons */}
             <div className="space-y-3 pt-4">
+              <CallAlwaysBestCareButton tone="sheet" />
               {/* Confirm Shift — only for open requests, never for shifts already sent to / approved by the client */}
               {!canConfirmShift(job.status) && (
                 <div

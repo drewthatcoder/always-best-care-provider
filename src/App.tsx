@@ -28,6 +28,7 @@ import AdminApplications from "./pages/AdminApplications";
 import AdminApprovedApplications from "./pages/AdminApprovedApplications";
 import AdminDeletedShifts from "./pages/AdminDeletedShifts";
 import AdminApprovedShifts from "./pages/AdminApprovedShifts";
+import AdminBookings from "./pages/AdminBookings";
 
 import ProviderLogin from "./pages/ProviderLogin";
 import ClientLogin from "./pages/ClientLogin";
@@ -72,6 +73,7 @@ const App = () => (
                 <Route path="/admin/approved" element={<AdminApprovedApplications />} />
                 <Route path="/admin/deleted-shifts" element={<AdminDeletedShifts />} />
                 <Route path="/admin/approved-shifts" element={<AdminApprovedShifts />} />
+                <Route path="/admin/bookings" element={<AdminBookings />} />
                 
                 <Route path="/admin/notifications" element={<AdminNotifications />} />
               </>

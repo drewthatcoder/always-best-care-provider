@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, User, Mail, Phone, MapPin, CreditCard, Calendar, Briefcase, Filter } from 'lucide-react';
+import { Search, User, Mail, Phone, MapPin, CreditCard, Calendar, Briefcase, Filter } from 'lucide-react';
+import AdminHeader from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -45,7 +45,6 @@ const ALL_SERVICES = [
 ];
 
 const AdminApprovedApplications = () => {
-  const navigate = useNavigate();
   const [applications, setApplications] = useState<ProviderApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ProviderApplication | null>(null);
@@ -116,20 +115,10 @@ const AdminApprovedApplications = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="care-gradient safe-area-top">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4 mb-4">
-            <button onClick={() => navigate('/admin/applications')} className="text-primary-foreground hover:text-primary-foreground/80">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-2xl font-bold text-primary-foreground">Approved Providers</h1>
-          </div>
-          <p className="text-primary-foreground/70 text-sm">
-            {filtered.length} of {applications.length} approved provider{applications.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
+      <AdminHeader
+        title="Approved Providers"
+        subtitle={`${filtered.length} of ${applications.length} approved provider${applications.length !== 1 ? 's' : ''}`}
+      />
 
       {/* Search & Filters */}
       <div className="max-w-4xl mx-auto px-6 pt-6 space-y-3">
