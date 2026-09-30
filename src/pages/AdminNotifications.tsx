@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bell, CheckCircle2, ChevronRight, Trash2, ClipboardCheck } from 'lucide-react';
+import { Bell, ChevronRight } from 'lucide-react';
+import AdminHeader from '@/components/admin/AdminHeader';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,7 +14,6 @@ interface Notification {
 }
 
 const AdminNotifications = () => {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,46 +56,7 @@ const AdminNotifications = () => {
 
   return (
     <div className="min-h-screen bg-background pb-8">
-      <div className="care-gradient safe-area-top">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4 mb-4">
-            <button onClick={() => navigate('/admin/applications')} className="text-primary-foreground hover:text-primary-foreground/80">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-2xl font-bold text-primary-foreground">Notifications</h1>
-          </div>
-          <nav className="flex items-center gap-3 mt-2 flex-wrap">
-            <button
-              onClick={() => navigate('/admin/approved')}
-              className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Approved Providers
-            </button>
-            <button
-              onClick={() => navigate('/admin/deleted-shifts')}
-              className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              Deleted Shifts
-            </button>
-            <button
-              onClick={() => navigate('/admin/applications')}
-              className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
-            >
-              <Bell className="w-4 h-4" />
-              Applications
-            </button>
-            <button
-              onClick={() => navigate('/admin/approved-shifts')}
-              className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
-            >
-              <ClipboardCheck className="w-4 h-4" />
-              Approved Shifts
-            </button>
-          </nav>
-        </div>
-      </div>
+      <AdminHeader title="Notifications" />
 
       {loading ? (
         <div className="flex items-center justify-center py-24 text-muted-foreground">

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Calendar, Clock, User, MapPin, FileText } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Trash2, Calendar, Clock, User, MapPin, FileText } from 'lucide-react';
+import AdminHeader from '@/components/admin/AdminHeader';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { userIsAdmin } from '@/lib/adminAccess';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -38,14 +39,9 @@ const AdminDeletedShifts = () => {
     const checkAdminAndFetch = async () => {
       if (!user) return;
 
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-        .maybeSingle();
+      const isAdmin = await userIsAdmin(user.id);
 
-      if (!roleData) {
+      if (!isAdmin) {
         toast.error('Access denied');
         navigate('/');
         return;
@@ -89,14 +85,7 @@ const AdminDeletedShifts = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="care-gradient safe-area-top">
-        <div className="max-w-4xl mx-auto px-6 py-6 flex items-center gap-4">
-          <button onClick={() => navigate('/admin/applications')} className="text-primary-foreground">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <h1 className="text-xl font-bold text-primary-foreground">Deleted Shifts</h1>
-        </div>
-      </header>
+      <AdminHeader title="Deleted Shifts" subtitle={`${records.length} deleted shift${records.length !== 1 ? 's' : ''}`} />
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         {loading ? (

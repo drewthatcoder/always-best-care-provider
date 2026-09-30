@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, Clock, CheckCircle2, XCircle, User, Mail, Phone, MapPin, CreditCard, AlertCircle, Bell, Trash2, ClipboardCheck, LogOut } from 'lucide-react';
+import { Eye, Clock, CheckCircle2, XCircle, User, Mail, Phone, MapPin, CreditCard, AlertCircle, Bell } from 'lucide-react';
+import AdminHeader from '@/components/admin/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -79,11 +80,6 @@ const AdminApplications = () => {
     setLoading(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-   navigate('/');
-  };
-
   const updateStatus = async (id: string, status: string) => {
     setUpdating(true);
     const { error } = await supabase
@@ -117,43 +113,12 @@ const AdminApplications = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="care-gradient safe-area-top">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <button onClick={() => navigate(-1)} className="text-primary-foreground hover:text-primary-foreground/80">
-                <ArrowLeft className="w-6 h-6" />
-              </button>
-              <h1 className="text-2xl font-bold text-primary-foreground">Provider Applications</h1>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
-          </div>
-          <p className="text-primary-foreground/70 text-sm">
-            {applications.length} application{applications.length !== 1 ? 's' : ''} total
-          </p>
-          <nav className="flex items-center gap-3 mt-4 flex-wrap">
-            <button onClick={() => navigate('/admin/approved')} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors">
-              <CheckCircle2 className="w-4 h-4" /> Approved Providers
-            </button>
-            <button onClick={() => navigate('/admin/approved-shifts')} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors">
-              <ClipboardCheck className="w-4 h-4" /> Approved Shifts
-            </button>
-            <button onClick={() => navigate('/notifications')} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors">
-              <Bell className="w-4 h-4" /> Notifications
-            </button>
-            <button onClick={() => navigate('/admin/deleted-shifts')} className="flex items-center gap-2 text-sm font-medium bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground px-4 py-2 rounded-lg transition-colors">
-              <Trash2 className="w-4 h-4" /> Deleted Shifts
-            </button>
-          </nav>
-        </div>
-      </div>
+      <AdminHeader
+        title="Provider Applications"
+        showLogout
+        onBack={() => navigate(-1)}
+        subtitle={`${applications.length} application${applications.length !== 1 ? 's' : ''} total`}
+      />
 
       {/* Pending Alert */}
       {pendingApps.length > 0 && (
