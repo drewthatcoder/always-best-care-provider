@@ -31,6 +31,7 @@ import AdminApprovedShifts from "./pages/AdminApprovedShifts";
 
 import ProviderLogin from "./pages/ProviderLogin";
 import ClientLogin from "./pages/ClientLogin";
+import PricingForm from "./pages/PricingForm";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -76,6 +77,7 @@ const App = () => (
               </>
             )}
             <Route path="/chat" element={<Dashboard />} />
+            <Route path="/pricing-form" element={<PricingForm />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -27,3 +27,7 @@ verify_jwt = false
 # Register.tsx sends the anon JWT after paid signup. The function emails the agreement via Resend.
 [functions.submit-provider-application]
 verify_jwt = false
+
+# Public /pricing-form link from email. Optional user JWT; the function resolves user_id itself.
+[functions.submit-service-pricing]
+verify_jwt = false

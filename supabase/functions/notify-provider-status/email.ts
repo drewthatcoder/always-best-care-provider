@@ -6,6 +6,7 @@ export const APPROVAL_SUBJECT = "🎉 Your Provider Application Has Been Approve
 export const REJECTION_SUBJECT = "Your Provider Application Status Update";
 export const PROVIDER_APP_URL = "https://easycare.live";
 export const SETTINGS_URL = "https://easycare.live/settings";
+export const PRICING_FORM_URL = "https://easycare.live/pricing-form";
 export const SUPPORT_EMAIL = "techsupport@cityoftreestech.com";
 
 export type ProviderStatus = "approved" | "rejected";
@@ -16,6 +17,36 @@ export function isProviderStatus(value: unknown): value is ProviderStatus {
 
 export function providerStatusSubject(status: ProviderStatus): string {
   return status === "approved" ? APPROVAL_SUBJECT : REJECTION_SUBJECT;
+}
+
+export type ApprovalRecipient = {
+  email?: string | null;
+  lastName?: string | null;
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Pricing form link, with optional name and email for the public form to prefill. */
+export function pricingFormUrl(options?: { name?: string | null; email?: string | null }): string {
+  const params = new URLSearchParams();
+  const name = options?.name?.replace(/[\r\n]+/g, " ").trim();
+  const email = options?.email?.replace(/[\r\n]+/g, "").trim();
+  if (name) params.set("name", name);
+  if (email) params.set("email", email);
+  const query = params.toString();
+  return query ? `${PRICING_FORM_URL}?${query}` : PRICING_FORM_URL;
+}
+
+function approvalPricingUrl(firstName: string, recipient?: ApprovalRecipient): string {
+  const lastName = recipient?.lastName?.trim();
+  const name = [firstName.trim(), lastName].filter(Boolean).join(" ");
+  return pricingFormUrl({ name, email: recipient?.email });
 }
 
 export function rejectionHtml(firstName: string): string {
@@ -30,7 +61,8 @@ export function rejectionHtml(firstName: string): string {
       `;
 }
 
-export function approvalHtml(firstName: string): string {
+export function approvalHtml(firstName: string, recipient?: ApprovalRecipient): string {
+  const pricingUrl = escapeHtml(approvalPricingUrl(firstName, recipient));
   return `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #16a34a;">🎉 Your Application Has Been Approved!</h2>
@@ -51,6 +83,14 @@ export function approvalHtml(firstName: string): string {
               Set up payouts
             </a>
           </p>
+          <h3 style="color: #111827; margin-top: 28px;">Set your service prices</h3>
+          <p>Enter your price for each of the 8 services for every zip code you serve.</p>
+          <p style="margin-top: 24px;">
+            <a href="${pricingUrl}"
+               style="background: #16a34a; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block;">
+              Set your service prices
+            </a>
+          </p>
           <p>If you have not already returned a signed Agency Subscriber Agreement, please sign it and email it to
             <a href="mailto:${AGREEMENT_RETURN_EMAIL}">${AGREEMENT_RETURN_EMAIL}</a>.
           </p>
@@ -62,6 +102,10 @@ export function approvalHtml(firstName: string): string {
       `;
 }
 
-export function providerStatusHtml(status: ProviderStatus, firstName: string): string {
-  return status === "approved" ? approvalHtml(firstName) : rejectionHtml(firstName);
+export function providerStatusHtml(
+  status: ProviderStatus,
+  firstName: string,
+  recipient?: ApprovalRecipient,
+): string {
+  return status === "approved" ? approvalHtml(firstName, recipient) : rejectionHtml(firstName);
 }

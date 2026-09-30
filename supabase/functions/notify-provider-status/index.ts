@@ -15,7 +15,8 @@ const corsHeaders = {
 /**
  * Admin-triggered Resend mail when a provider application is approved or rejected.
  * Hosted source was not in this repo; reconstructed from the Lovable/easycare.live
- * function. Approval now includes Stripe Connect / Set up payouts steps.
+ * function. Approval includes Stripe Connect / Set up payouts steps, then a
+ * link to https://easycare.live/pricing-form with the provider's name and email.
  */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -105,7 +106,10 @@ Deno.serve(async (req) => {
         from: EMAIL_FROM,
         to: [app.email],
         subject: providerStatusSubject(status),
-        html: providerStatusHtml(status, app.first_name),
+        html: providerStatusHtml(status, app.first_name, {
+          email: app.email,
+          lastName: app.last_name,
+        }),
       }),
     });
 

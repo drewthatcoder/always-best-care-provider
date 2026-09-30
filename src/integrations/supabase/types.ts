@@ -392,6 +392,48 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_service_pricing: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          price_cents: number
+          provider_email: string
+          provider_name: string
+          provider_phone: string | null
+          service: string
+          submission_id: string
+          user_id: string | null
+          zip: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          price_cents: number
+          provider_email: string
+          provider_name: string
+          provider_phone?: string | null
+          service: string
+          submission_id: string
+          user_id?: string | null
+          zip: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          price_cents?: number
+          provider_email?: string
+          provider_name?: string
+          provider_phone?: string | null
+          service?: string
+          submission_id?: string
+          user_id?: string | null
+          zip?: string
+        }
+        Relationships: []
+      }
       provider_zip_codes: {
         Row: {
           created_at: string
