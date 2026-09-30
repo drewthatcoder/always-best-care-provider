@@ -1,146 +1,32 @@
-import { useState, useEffect } from 'react';
-import { Menu, ChevronLeft, ChevronRight, SlidersHorizontal, ArrowUpDown, Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { Clock } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
-import JobCard, { type Job } from '@/components/JobCard';
+import { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
 import ClientProfileSection from '@/components/ClientProfileSection';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
+import ProviderJobSections from '@/components/ProviderJobSections';
+import { useProviderJobs } from '@/hooks/useProviderJobs';
 import { isNativePlatform } from '@/hooks/usePlatform';
-import { format } from 'date-fns';
 
 const Dashboard = () => {
-  const { user } = useAuth();
   const isNative = isNativePlatform();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(!isNative);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loadingJobs, setLoadingJobs] = useState(true);
-
-  // Only check provider application status on web (providers), not mobile (clients)
-  useEffect(() => {
-    if (isNative) return;
-
-    const checkApplicationStatus = async () => {
-      if (!user) {
-        setCheckingStatus(false);
-        return;
-      }
-
-      const { data, error } = await supabase.
-      from('provider_applications').
-      select('status').
-      eq('user_id', user.id).
-      maybeSingle();
-
-      if (!error && data) {
-        setApplicationStatus(data.status);
-      }
-      setCheckingStatus(false);
-    };
-
-    checkApplicationStatus();
-  }, [user, isNative]);
-
-  // Fetch real bookings from the database filtered by provider zip codes
-  useEffect(() => {
-    if (!user) {
-      setLoadingJobs(false);
-      return;
-    }
-    // Wait for provider status check to finish before loading jobs
-    if (!isNative && checkingStatus) return;
-    // Don't load jobs if provider isn't approved
-    if (!isNative && applicationStatus && applicationStatus !== 'approved') {
-      setLoadingJobs(false);
-      return;
-    }
-
-    const fetchJobs = async () => {
-      setLoadingJobs(true);
-
-      // Fetch bookings — RLS automatically filters by provider zip codes
-      const { data: bookings, error } = await supabase.
-      from('bookings' as any).
-      select('*').
-      in('status', ['upcoming', 'in-progress', 'confirmed']).
-      order('scheduled_date', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching bookings:', error);
-        setLoadingJobs(false);
-        return;
-      }
-
-      if (!bookings || bookings.length === 0) {
-        setJobs([]);
-        setLoadingJobs(false);
-        return;
-      }
-
-      // Fetch client profiles for each unique client_user_id
-      const clientIds = [...new Set((bookings as any[]).map((b: any) => b.client_user_id))];
-      const { data: profiles } = await supabase.
-      from('profiles').
-      select('user_id, first_name, last_name').
-      in('user_id', clientIds);
-
-      const profileMap: Record<string, {first_name: string | null;last_name: string | null;}> = {};
-      (profiles || []).forEach((p: any) => {
-        profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name };
-      });
-
-      const mapped: Job[] = (bookings as any[]).map((b: any) => {
-        const profile = profileMap[b.client_user_id];
-        const dateObj = new Date(b.scheduled_date + 'T00:00:00');
-        return {
-          id: b.id,
-          date: format(dateObj, 'EEE MMM dd yyyy').toUpperCase(),
-          startTime: b.start_time,
-          endTime: b.end_time,
-          clientFirstName: profile?.first_name ?? undefined,
-          clientLastName: profile?.last_name ?? undefined,
-          service: b.service,
-          clientZipCode: b.client_zip_code ?? undefined,
-          status: b.status as Job['status'],
-          providerViewed: b.provider_viewed ?? false,
-          clientPhone: b.client_phone ?? undefined,
-          clientAddress: b.client_address ?? undefined,
-          clientAddressLine2: b.client_address_line2 ?? undefined,
-          clientCity: b.client_city ?? undefined,
-          clientState: b.client_state ?? undefined,
-          clientDateOfBirth: b.client_date_of_birth ?? undefined,
-          clientHeight: b.client_height ?? undefined,
-          clientWeight: b.client_weight ?? undefined,
-          clientResponsibleParty: b.client_responsible_party ?? undefined,
-          clientResponsiblePartyName: b.client_responsible_party_name ?? undefined,
-          clientResponsiblePartyEmail: b.client_responsible_party_email ?? undefined,
-          clientAdditionalInfo: b.client_additional_info ?? undefined,
-          clientRecurringWeekly: b.client_recurring_weekly ?? undefined,
-          notes: b.notes ?? undefined
-        };
-      });
-
-      setJobs(mapped);
-      setLoadingJobs(false);
-    };
-
-    fetchJobs();
-  }, [user, isNative, checkingStatus, applicationStatus]);
+  // Only check provider application status / load jobs on web (providers), not mobile (clients)
+  const {
+    applicationStatus,
+    checkingStatus,
+    loadingJobs,
+    upcomingRequests,
+    myJobs,
+    markViewed,
+    handleConfirmed,
+  } = useProviderJobs({ enabled: !isNative });
 
   const handleJobClick = async (job: Job) => {
     setSelectedJob(job);
     setSheetOpen(true);
-
-    if (!job.providerViewed) {
-      // Mark as viewed in DB
-      await supabase.from('bookings' as any).update({ provider_viewed: true }).eq('id', job.id);
-      // Update local state
-      setJobs((prev) => prev.map((j) => j.id === job.id ? { ...j, providerViewed: true } : j));
-    }
+    await markViewed(job);
   };
 
   if (checkingStatus) {
@@ -195,32 +81,19 @@ const Dashboard = () => {
       {/* Header */}
       <div className="care-gradient pt-12 pb-6 px-6">
         <h1 className="text-xl font-semibold text-white text-center">
-          {isApprovedProvider ? 'My Jobs' : 'Client Profile'}
+          {isApprovedProvider ? 'Dashboard' : 'Client Profile'}
         </h1>
       </div>
 
       {/* Provider Jobs View */}
       {isApprovedProvider ? (
         <div className="px-4 pt-6">
-          {loadingJobs ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">Loading jobs...</p>
-            </div>
-          ) : jobs.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No jobs available in your territory.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {jobs.map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  onClick={() => handleJobClick(job)}
-                />
-              ))}
-            </div>
-          )}
+          <ProviderJobSections
+            loading={loadingJobs}
+            upcomingRequests={upcomingRequests}
+            myJobs={myJobs}
+            onJobClick={handleJobClick}
+          />
         </div>
       ) : (
         /* Client Profile View */
@@ -234,6 +107,7 @@ const Dashboard = () => {
         job={selectedJob}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+        onConfirm={handleConfirmed}
       />
 
       {/* Bottom Navigation */}
