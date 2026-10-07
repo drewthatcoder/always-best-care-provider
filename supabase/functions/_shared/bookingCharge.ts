@@ -280,6 +280,24 @@ export function stripeApiType(error: unknown): string {
   return STRIPE_CLASS_API_TYPES[chosen] ?? chosen;
 }
 
+/**
+ * A card error from `paymentIntents.create` still creates a PaymentIntent
+ * (status requires_payment_method). Stripe returns it as `payment_intent` on the error
+ * (`error.payment_intent`, or `error.raw.payment_intent` on the raw API body).
+ */
+export function stripeErrorPaymentIntent(error: unknown): { id: string; livemode: boolean | null } | null {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const raw = record.raw && typeof record.raw === "object" ? (record.raw as Record<string, unknown>) : {};
+  for (const candidate of [record.payment_intent, raw.payment_intent]) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const pi = candidate as { id?: unknown; livemode?: unknown };
+    if (typeof pi.id === "string" && pi.id.startsWith("pi_")) {
+      return { id: pi.id, livemode: typeof pi.livemode === "boolean" ? pi.livemode : null };
+    }
+  }
+  return null;
+}
+
 export function mapStripeError(error: unknown): { httpStatus: number; code: string; error: string } {
   const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
   const code = typeof record.code === "string" ? record.code : "";
@@ -671,12 +689,13 @@ export async function chargeBooking(
       || mapped.code === "authentication_required"
       || mapped.code === "stripe_config_error"
     ) {
+      const declinedIntent = stripeErrorPaymentIntent(error);
       const missed = await finalizeRecorded(deps, {
         bookingId: booking.id,
         success: false,
-        paymentIntentId: null,
+        paymentIntentId: declinedIntent?.id ?? null,
         amountCents: assessment.amountCents,
-        livemode: deps.mode === "live",
+        livemode: declinedIntent?.livemode ?? deps.mode === "live",
         destination: assessment.destination,
         error: mapped.error,
       });

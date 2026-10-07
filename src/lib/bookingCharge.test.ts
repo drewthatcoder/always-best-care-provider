@@ -14,6 +14,7 @@ import {
   serviceLabel,
   serviceTokens,
   stripeApiType,
+  stripeErrorPaymentIntent,
   succeededChargeSearchQuery,
   type BookingChargeDeps,
   type BookingForCharge,
@@ -292,7 +293,38 @@ describe("chargeBooking", () => {
       status: 402,
       body: { error: "Your card was declined.", code: "card_declined" },
     });
-    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: "Your card was declined." }));
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: "Your card was declined.", paymentIntentId: null }));
+  });
+
+  it("stores the declined PaymentIntent id from the Stripe card error", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const stripe = happyStripe().stripe;
+    stripe.paymentIntents.create = vi.fn(async () => {
+      throw {
+        type: "StripeCardError",
+        rawType: "card_error",
+        code: "card_declined",
+        decline_code: "generic_decline",
+        message: "Your card was declined.",
+        payment_intent: { id: "pi_declined", status: "requires_payment_method", livemode: false },
+      };
+    });
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(402);
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      success: false,
+      paymentIntentId: "pi_declined",
+      livemode: false,
+    }));
+  });
+
+  it("reads the declined PaymentIntent from the error or its raw body, and ignores junk", () => {
+    expect(stripeErrorPaymentIntent({ payment_intent: { id: "pi_a", livemode: true } })).toEqual({ id: "pi_a", livemode: true });
+    expect(stripeErrorPaymentIntent({ raw: { payment_intent: { id: "pi_b" } } })).toEqual({ id: "pi_b", livemode: null });
+    expect(stripeErrorPaymentIntent({ payment_intent: { id: "seti_x" } })).toBeNull();
+    expect(stripeErrorPaymentIntent({ message: "no intent" })).toBeNull();
+    expect(stripeErrorPaymentIntent(null)).toBeNull();
   });
 
   it("records a deterministic Stripe error as failed so the next attempt can use a new key", async () => {
