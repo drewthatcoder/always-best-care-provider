@@ -17,9 +17,10 @@ export const CHARGE_ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "Sign in again to charge this visit.",
   forbidden: "You are not the assigned provider for this visit.",
   unknown: "Payment status is unknown. Refreshing…",
+  stripe_config_error: "Stripe rejected this charge. Refresh and try again.",
 };
 
-const SERVER_MESSAGE_CODES = new Set(["card_declined", "authentication_required"]);
+const SERVER_MESSAGE_CODES = new Set(["card_declined", "authentication_required", "stripe_config_error"]);
 
 export interface ChargeCard {
   brand: string;
@@ -198,5 +199,6 @@ export function chargeConfirmBlocked(code: string | null | undefined): boolean {
     || code === "provider_not_payable"
     || code === "multiple_customers"
     || code === "invalid_amount"
-    || code === "not_approved";
+    || code === "not_approved"
+    || code === "in_progress";
 }

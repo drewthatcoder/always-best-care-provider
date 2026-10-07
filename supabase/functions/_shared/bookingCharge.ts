@@ -26,6 +26,7 @@ export const CHARGE_MESSAGES = {
   forbidden: "Not the assigned provider",
   not_found: "Booking not found",
   unknown: "Payment status is unknown. Refresh and try again.",
+  stripe_config_error: "Stripe rejected this charge. Refresh and try again.",
   already_charged: "This visit was already charged.",
   too_early: "This visit can't be charged before the scheduled date.",
   not_allowed: "Not allowed",
@@ -94,11 +95,16 @@ export interface PaymentIntentLike {
   amount?: number;
   livemode?: boolean;
   transfer_data?: { destination?: unknown } | null;
+  metadata?: { booking_id?: string | null } | null;
 }
+
+/** Statuses that mean a charge for this booking already exists and must not be created again. */
+export const BLOCKING_PAYMENT_INTENT_STATUSES = ["succeeded", "processing", "requires_capture"] as const;
 
 export interface ChargeStripe extends CardStripe {
   paymentIntents: {
     search(params: { query: string; limit?: number }): Promise<{ data: PaymentIntentLike[] }>;
+    list(params: { customer: string; limit?: number }): Promise<{ data: PaymentIntentLike[] }>;
     create(
       params: Record<string, unknown>,
       options?: { idempotencyKey?: string },
@@ -203,6 +209,25 @@ export function isAccountId(value: unknown): value is string {
   return typeof value === "string" && value.startsWith("acct_");
 }
 
+async function findExistingCharge(
+  stripe: ChargeStripe,
+  bookingId: string,
+  customerId: string,
+): Promise<PaymentIntentLike | null> {
+  const searched = await stripe.paymentIntents.search({
+    query: succeededChargeSearchQuery(bookingId),
+    limit: 1,
+  });
+  const fromSearch = searched.data?.find((pi) => pi.status === "succeeded");
+  if (fromSearch) return fromSearch;
+
+  const listed = await stripe.paymentIntents.list({ customer: customerId, limit: 100 });
+  const matches = (listed.data ?? []).filter((pi) => paymentIntentMatchesBooking(pi, bookingId));
+  return matches.find((pi) => pi.status === "succeeded")
+    ?? matches.find((pi) => pi.status === "processing" || pi.status === "requires_capture")
+    ?? null;
+}
+
 export function succeededChargeSearchQuery(bookingId: string): string {
   if (!BOOKING_UUID.test(bookingId)) {
     throw new Error("invalid booking id");
@@ -212,6 +237,11 @@ export function succeededChargeSearchQuery(bookingId: string): string {
 
 export function isBookingUuid(value: string): boolean {
   return BOOKING_UUID.test(value);
+}
+
+export function paymentIntentMatchesBooking(pi: PaymentIntentLike, bookingId: string): boolean {
+  return pi.metadata?.booking_id === bookingId
+    && (BLOCKING_PAYMENT_INTENT_STATUSES as readonly string[]).includes(pi.status);
 }
 
 export function paymentIntentDestination(pi: { transfer_data?: { destination?: unknown } | null }): string | null {
@@ -239,7 +269,22 @@ export function mapStripeError(error: unknown): { httpStatus: number; code: stri
   if (code === "card_declined" || type === "card_error" || decline) {
     return { httpStatus: 402, code: "card_declined", error: message };
   }
+  // Invalid destination, idempotency-key reuse, and other invalid_request errors
+  // will fail the same way on every retry. Record them so the next attempt gets a new key.
+  if (isDeterministicStripeConfigError(type, code, message)) {
+    return { httpStatus: 409, code: "stripe_config_error", error: message || CHARGE_MESSAGES.stripe_config_error };
+  }
   return { httpStatus: 500, code: "unknown", error: CHARGE_MESSAGES.unknown };
+}
+
+function isDeterministicStripeConfigError(type: string, code: string, message: string): boolean {
+  if (type === "idempotency_error" || type === "invalid_request_error") return true;
+  if (
+    code === "account_invalid"
+    || code === "insufficient_capabilities_for_transfer"
+  ) return true;
+  const lower = message.toLowerCase();
+  return lower.includes("idempotency") || lower.includes("destination account");
 }
 
 export function outcomeFromPaymentIntentStatus(
@@ -438,6 +483,24 @@ export async function previewBookingCharge(
   return previewBody(assessment, code);
 }
 
+async function finalizeRecorded(
+  deps: BookingChargeDeps,
+  args: FinalizeChargeArgs,
+): Promise<ChargeHttpResult | null> {
+  try {
+    await deps.store.finalize(args);
+    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "finalize failed";
+    console.error("finalize_booking_charge failed", {
+      bookingId: args.bookingId,
+      paymentIntentId: args.paymentIntentId,
+      message,
+    });
+    return failure(500, "unknown", CHARGE_MESSAGES.unknown);
+  }
+}
+
 async function finalizeSuccess(
   deps: BookingChargeDeps,
   booking: BookingForCharge,
@@ -447,7 +510,7 @@ async function finalizeSuccess(
   const destination = paymentIntentDestination(pi) ?? fallback.destination;
   const amountCents = typeof pi.amount === "number" ? pi.amount : fallback.amountCents;
   const livemode = typeof pi.livemode === "boolean" ? pi.livemode : deps.mode === "live";
-  await deps.store.finalize({
+  const missed = await finalizeRecorded(deps, {
     bookingId: booking.id,
     success: true,
     paymentIntentId: pi.id,
@@ -456,6 +519,7 @@ async function finalizeSuccess(
     destination,
     error: null,
   });
+  if (missed) return missed;
   return {
     status: 200,
     body: {
@@ -481,15 +545,16 @@ export async function chargeBooking(
 
   if (isPaid(booking)) {
     if (booking.status !== "completed" && booking.payment_intent_id) {
-      await deps.store.finalize({
+      const missed = await finalizeRecorded(deps, {
         bookingId: booking.id,
         success: true,
         paymentIntentId: booking.payment_intent_id,
         amountCents: booking.charge_amount_cents ?? booking.price_cents,
-        livemode: booking.charge_livemode,
-        destination: booking.charge_destination,
+        livemode: booking.charge_livemode ?? null,
+        destination: booking.charge_destination ?? null,
         error: null,
       });
+      if (missed) return missed;
     }
     return alreadyChargedBody(booking, { bookingStatus: "completed" });
   }
@@ -512,20 +577,25 @@ export async function chargeBooking(
   }
   booking = claimed;
 
-  const existing = await deps.stripe.paymentIntents.search({
-    query: succeededChargeSearchQuery(booking.id),
-    limit: 1,
-  });
-  const prior = existing.data?.find((pi) => pi.status === "succeeded");
-  if (prior) {
+  const prior = await findExistingCharge(deps.stripe, booking.id, assessment.customerId);
+  if (prior?.status === "succeeded") {
     const adopted = await finalizeSuccess(deps, booking, prior, {
       amountCents: assessment.amountCents,
       destination: assessment.destination,
     });
+    if (adopted.status !== 200) return adopted;
     return {
       status: 200,
       body: { ...adopted.body, code: "already_charged" },
     };
+  }
+  if (prior) {
+    console.error("existing payment intent blocks a new charge", {
+      bookingId: booking.id,
+      paymentIntentId: prior.id,
+      status: prior.status,
+    });
+    return failure(409, "in_progress", CHARGE_MESSAGES.in_progress);
   }
 
   const attempt = booking.charge_attempts ?? 0;
@@ -556,8 +626,12 @@ export async function chargeBooking(
     });
   } catch (error) {
     const mapped = mapStripeError(error);
-    if (mapped.code === "card_declined" || mapped.code === "authentication_required") {
-      await deps.store.finalize({
+    if (
+      mapped.code === "card_declined"
+      || mapped.code === "authentication_required"
+      || mapped.code === "stripe_config_error"
+    ) {
+      const missed = await finalizeRecorded(deps, {
         bookingId: booking.id,
         success: false,
         paymentIntentId: null,
@@ -566,6 +640,7 @@ export async function chargeBooking(
         destination: assessment.destination,
         error: mapped.error,
       });
+      if (missed) return missed;
     }
     return failure(mapped.httpStatus, mapped.code, mapped.error);
   }
@@ -581,7 +656,7 @@ export async function chargeBooking(
     const message = outcome === "authentication_required"
       ? "This card requires authentication."
       : "Your card was declined.";
-    await deps.store.finalize({
+    const missed = await finalizeRecorded(deps, {
       bookingId: booking.id,
       success: false,
       paymentIntentId: paymentIntent.id,
@@ -590,6 +665,7 @@ export async function chargeBooking(
       destination: assessment.destination,
       error: message,
     });
+    if (missed) return missed;
     return failure(402, outcome, message);
   }
 

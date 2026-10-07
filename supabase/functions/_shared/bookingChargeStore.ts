@@ -156,7 +156,7 @@ export function createChargeStore(admin: ChargeAdmin, options: { mode: "live" | 
     },
 
     async finalize(args: FinalizeChargeArgs): Promise<void> {
-      const { error } = await admin.rpc("finalize_booking_charge", {
+      const { data, error } = await admin.rpc("finalize_booking_charge", {
         p_booking_id: args.bookingId,
         p_success: args.success,
         p_payment_intent_id: args.paymentIntentId,
@@ -166,6 +166,9 @@ export function createChargeStore(admin: ChargeAdmin, options: { mode: "live" | 
         p_error: args.error,
       });
       if (error) throw new Error(error.message);
+      if (!unwrapRow(data)) {
+        throw new Error(`finalize_booking_charge updated 0 rows for booking ${args.bookingId}`);
+      }
     },
   };
 }

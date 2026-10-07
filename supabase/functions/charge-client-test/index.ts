@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     return await handleProviderChargeRequest(req, body, {
       stripe,
       mode: "test",
-      allowUserIds: qaUserIdSet(Deno.env.get("QA_USER_IDS")),
+      allowUserIds: qaUserIdSet(),
     });
   } catch (error) {
     return edgeFailure("charge-client-test", error);

@@ -72,7 +72,6 @@ export async function handleSetDefaultPaymentMethod(
     directory: options.directory,
     userId: auth.user!.id,
     setupIntentId,
-    stripeVersion: readStripeVersion(req),
   });
   return jsonResponse(result.body, result.status);
 }
@@ -91,7 +90,6 @@ export async function handleGetPaymentMethod(
     stripe: options.stripe,
     directory: options.directory,
     userId: auth.user!.id,
-    stripeVersion: readStripeVersion(req),
   });
   return jsonResponse(result.body, result.status);
 }

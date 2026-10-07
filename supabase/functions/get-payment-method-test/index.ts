@@ -1,5 +1,5 @@
 import { handleGetPaymentMethod } from "../_shared/cardOnFileHandler.ts";
-import { createTestCustomerDirectory } from "../_shared/cardOnFileStore.ts";
+import { createTestCustomerDirectory, type ProfileAdmin } from "../_shared/cardOnFileStore.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import { qaUserIdSet } from "../_shared/qaAllowlist.ts";
@@ -13,8 +13,8 @@ Deno.serve(async (req) => {
   try {
     return await handleGetPaymentMethod(req, {
       stripe: getTestStripe(),
-      directory: createTestCustomerDirectory(getServiceClient()),
-      allowUserIds: qaUserIdSet(Deno.env.get("QA_USER_IDS")),
+      directory: createTestCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
+      allowUserIds: qaUserIdSet(),
     });
   } catch (error) {
     return edgeFailure("get-payment-method-test", error);

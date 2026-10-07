@@ -7,6 +7,7 @@ import {
   chargeAmountCents,
   chargeBooking,
   mapStripeError,
+  paymentIntentMatchesBooking,
   previewBookingCharge,
   resolveFixtureCustomer,
   resolveStoredCustomer,
@@ -18,12 +19,14 @@ import {
   type ChargeStore,
 } from "../../supabase/functions/_shared/bookingCharge.ts";
 import { createChargeStore } from "../../supabase/functions/_shared/bookingChargeStore.ts";
-import { createSetupIntentForUser, getPaymentMethodForUser, setDefaultPaymentMethodForUser } from "../../supabase/functions/_shared/cardOnFile.ts";
+import { createSetupIntentForUser, ephemeralKeyApiVersion, getPaymentMethodForUser, setDefaultPaymentMethodForUser } from "../../supabase/functions/_shared/cardOnFile.ts";
 import { createTestCustomerDirectory } from "../../supabase/functions/_shared/cardOnFileStore.ts";
-import { DEFAULT_QA_USER_IDS, parseQaUserIds } from "../../supabase/functions/_shared/qaAllowlist.ts";
+import { QA_USER_IDS, qaUserIdSet } from "../../supabase/functions/_shared/qaAllowlist.ts";
+import { STRIPE_API_VERSION } from "../../supabase/functions/_shared/stripeApiVersion.ts";
 import {
   NO_CARD_MESSAGE,
   chargeConfirmationText,
+  chargeConfirmBlocked,
   chargeFunctionName,
   interpretChargeResponse,
   isCompleteAndChargeFlag,
@@ -144,6 +147,22 @@ describe("stripe error mapping", () => {
       code: "authentication_required",
     });
     expect(mapStripeError({ message: "network" })).toMatchObject({ httpStatus: 500, code: "unknown" });
+    expect(mapStripeError({
+      type: "invalid_request_error",
+      message: "The destination account does not have transfers enabled.",
+    })).toMatchObject({ httpStatus: 409, code: "stripe_config_error" });
+    expect(mapStripeError({ type: "idempotency_error", message: "Keys for idempotent requests can only be used with the same parameters." })).toMatchObject({
+      httpStatus: 409,
+      code: "stripe_config_error",
+    });
+  });
+
+  it("matches a listed payment intent only for this booking and a blocking status", () => {
+    const bookingId = BOOKING_ID;
+    expect(paymentIntentMatchesBooking({ id: "pi_1", status: "processing", metadata: { booking_id: bookingId } }, bookingId)).toBe(true);
+    expect(paymentIntentMatchesBooking({ id: "pi_2", status: "requires_capture", metadata: { booking_id: bookingId } }, bookingId)).toBe(true);
+    expect(paymentIntentMatchesBooking({ id: "pi_3", status: "canceled", metadata: { booking_id: bookingId } }, bookingId)).toBe(false);
+    expect(paymentIntentMatchesBooking({ id: "pi_4", status: "succeeded", metadata: { booking_id: "other" } }, bookingId)).toBe(false);
   });
 });
 
@@ -168,6 +187,7 @@ function happyStripe(create = vi.fn(async (
       paymentMethods: { list: vi.fn(async () => ({ data: [] })) },
       paymentIntents: {
         search: vi.fn(async () => ({ data: [] })),
+        list: vi.fn(async () => ({ data: [] })),
         create,
       },
       accounts: { retrieve: vi.fn(async () => ({ id: "acct_1", charges_enabled: true, payouts_enabled: true })) },
@@ -251,6 +271,81 @@ describe("chargeBooking", () => {
       body: { error: "Your card was declined.", code: "card_declined" },
     });
     expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: "Your card was declined." }));
+  });
+
+  it("records a deterministic Stripe error as failed so the next attempt can use a new key", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const stripe = happyStripe().stripe;
+    stripe.paymentIntents.create = vi.fn(async () => {
+      throw { type: "invalid_request_error", message: "The destination account is invalid." };
+    });
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe("stripe_config_error");
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+  });
+
+  it("leaves a transient Stripe error in processing", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const stripe = happyStripe().stripe;
+    stripe.paymentIntents.create = vi.fn(async () => {
+      throw { type: "api_connection_error", message: "network" };
+    });
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(500);
+    expect(result.body.code).toBe("unknown");
+    expect(store.finalize).not.toHaveBeenCalled();
+  });
+
+  it("adopts a succeeded charge found on the customer list when search is empty", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const { stripe, create } = happyStripe();
+    stripe.paymentIntents.list = vi.fn(async () => ({
+      data: [{
+        id: "pi_listed",
+        status: "succeeded",
+        amount: 5500,
+        livemode: false,
+        metadata: { booking_id: current.id },
+        transfer_data: { destination: "acct_1" },
+      }],
+    }));
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(create).not.toHaveBeenCalled();
+    expect(result.status).toBe(200);
+    expect(result.body.code).toBe("already_charged");
+    expect(result.body.paymentIntentId).toBe("pi_listed");
+  });
+
+  it("does not create another charge when a processing intent is already on the customer", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const { stripe, create } = happyStripe();
+    stripe.paymentIntents.list = vi.fn(async () => ({
+      data: [{ id: "pi_open", status: "processing", metadata: { booking_id: current.id } }],
+    }));
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(create).not.toHaveBeenCalled();
+    expect(store.finalize).not.toHaveBeenCalled();
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe("in_progress");
+  });
+
+  it("returns 500 and does not claim success when finalize updates no rows", async () => {
+    const current = booking();
+    const store = storeFor(current, {
+      finalize: async () => {
+        throw new Error("finalize_booking_charge updated 0 rows");
+      },
+    });
+    const { stripe } = happyStripe();
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(500);
+    expect(result.body.code).toBe("unknown");
+    expect(result.body.paymentIntentId).toBeUndefined();
   });
 
   it("does not charge when the card, customer, or payout account is missing", async () => {
@@ -385,15 +480,40 @@ describe("card on file", () => {
     expect(saved).toEqual(["cus_new"]);
   });
 
-  it("requires the stripe-version header and rejects another customer's setup intent", async () => {
+  it("falls back to the pinned Stripe API version when stripe-version is absent", async () => {
+    const stripe = {
+      customers: { retrieve: vi.fn(), create: vi.fn(async () => ({ id: "cus_new" })), update: vi.fn() },
+      setupIntents: { create: vi.fn(async () => ({ id: "seti_1", client_secret: "seti_secret" })), retrieve: vi.fn() },
+      ephemeralKeys: { create: vi.fn(async () => ({ secret: "ek_secret" })) },
+      paymentMethods: { list: vi.fn() },
+    };
+    const result = await createSetupIntentForUser({
+      stripe: stripe as never,
+      directory: {
+        listCustomerIds: async () => [],
+        canStoreCustomer: async () => true,
+        saveCustomerId: async () => undefined,
+      },
+      publishableKey: "pk_test_123",
+      stripeVersion: null,
+      user: { id: "user-1", email: "qa@example.com", name: "QA Client" },
+    });
+    expect(ephemeralKeyApiVersion(null)).toBe(STRIPE_API_VERSION);
+    expect(result.status).toBe(200);
+    expect(stripe.ephemeralKeys.create).toHaveBeenCalledWith(
+      { customer: "cus_new" },
+      { apiVersion: STRIPE_API_VERSION },
+    );
+  });
+
+  it("does not require stripe-version to read or set a card, and rejects another customer's setup intent", async () => {
     const missing = await getPaymentMethodForUser({
-      stripe: {} as never,
+      stripe: { customers: { retrieve: vi.fn() }, paymentMethods: { list: vi.fn() } } as never,
       directory: { listCustomerIds: async () => [], canStoreCustomer: async () => true, saveCustomerId: async () => undefined },
       userId: "user-1",
-      stripeVersion: null,
     });
-    expect(missing.status).toBe(400);
-    expect(missing.body).toMatchObject({ code: "stripe_version_required" });
+    expect(missing.status).toBe(200);
+    expect(missing.body).toBeNull();
 
     const stripe = {
       customers: { update: vi.fn(), retrieve: vi.fn(), create: vi.fn() },
@@ -412,7 +532,6 @@ describe("card on file", () => {
       },
       userId: "user-1",
       setupIntentId: "seti_1",
-      stripeVersion: "2024-06-20",
     });
     expect(rejected.status).toBe(403);
     expect(stripe.customers.update).not.toHaveBeenCalled();
@@ -434,7 +553,6 @@ describe("card on file", () => {
         },
       } as never),
       userId: "user-1",
-      stripeVersion: "2024-06-20",
     });
     expect(result).toEqual({ status: 200, body: null });
   });
@@ -460,6 +578,11 @@ describe("frontend charge copy", () => {
       serviceLabel: "Dressing",
       scheduledDate: "2026-12-02",
     })).toBe("Charge $55.00 to Visa •••4242 for Dressing on Dec 2?");
+  });
+
+  it("disables confirm while a charge is already in progress", () => {
+    expect(chargeConfirmBlocked("in_progress")).toBe(true);
+    expect(chargeConfirmBlocked(null)).toBe(false);
   });
 
   it("uses the required no-card copy", () => {
@@ -490,9 +613,13 @@ describe("frontend charge copy", () => {
 });
 
 describe("qa allowlist and migration", () => {
-  it("defaults to the two QA user ids", () => {
-    expect(parseQaUserIds(undefined)).toEqual([...DEFAULT_QA_USER_IDS]);
-    expect(parseQaUserIds(" a , b ")).toEqual(["a", "b"]);
+  it("hardcodes the two QA user ids and ignores the environment", () => {
+    expect([...qaUserIdSet()]).toEqual([...QA_USER_IDS]);
+    expect(qaUserIdSet().has("5a5486f5-1058-4091-aa03-b09c916b8da0")).toBe(true);
+    expect(qaUserIdSet().has("6b0f27b4-e015-4c3a-972d-8191c94043ba")).toBe(true);
+    const source = readFileSync("supabase/functions/_shared/qaAllowlist.ts", "utf8");
+    expect(source).not.toContain("Deno.env");
+    expect(source).not.toContain("parseQaUserIds");
   });
 
   it("keeps the previous notify branches and adds the completed charge branch", () => {
@@ -510,6 +637,8 @@ describe("qa allowlist and migration", () => {
     expect(migration).toContain("Visit completed, ");
     expect(migration).toContain("claim_booking_for_charge");
     expect(migration).toContain("finalize_booking_charge");
+    expect(migration).toContain("status is locked while a charge is processing");
+    expect(migration).toContain("finalize_booking_charge updated 0 rows");
     expect(migration).toContain("stripe_test_fixtures");
     expect(migration).toContain("payment_intent_id is not null");
     const rollback = readFileSync("supabase/migrations/rollback/20261008120000_booking_complete_and_charge.sql", "utf8");

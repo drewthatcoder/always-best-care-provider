@@ -1,5 +1,6 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { assertStripeSecretKey, isLiveStripeSecret } from "./stripeMode.ts";
+import { STRIPE_API_VERSION } from "./stripeApiVersion.ts";
 
 /**
  * Stripe client for the platform account. Mode is the secret key
@@ -15,7 +16,7 @@ export function isPlatformLive(): boolean {
 
 export function getStripe(): Stripe {
   return new Stripe(getStripeSecretKey(), {
-    apiVersion: "2024-06-20",
+    apiVersion: STRIPE_API_VERSION,
     httpClient: Stripe.createFetchHttpClient(),
   });
 }
@@ -66,7 +67,7 @@ export function getTestStripe(): Stripe {
   const secret = getTestStripeSecretKey();
   getTestStripePublishableKey();
   return new Stripe(secret, {
-    apiVersion: "2024-06-20",
+    apiVersion: STRIPE_API_VERSION,
     httpClient: Stripe.createFetchHttpClient(),
   });
 }

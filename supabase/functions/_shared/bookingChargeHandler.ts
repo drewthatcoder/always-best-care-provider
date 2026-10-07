@@ -37,8 +37,10 @@ export async function handleProviderChargeRequest(
   if (options.allowUserIds) {
     const booking = await store.getBooking(bookingId);
     if (!booking) return jsonResponse({ error: "Booking not found", code: "not_found" }, 404);
-    const clientAllowed = Boolean(booking.client_user_id) && options.allowUserIds.has(booking.client_user_id);
-    const providerAllowed = Boolean(booking.provider_user_id) && options.allowUserIds.has(booking.provider_user_id);
+    const clientId = booking.client_user_id;
+    const providerId = booking.provider_user_id;
+    const clientAllowed = clientId.length > 0 && options.allowUserIds.has(clientId);
+    const providerAllowed = typeof providerId === "string" && options.allowUserIds.has(providerId);
     if (!clientAllowed || !providerAllowed) {
       return jsonResponse({ error: "Not allowed", code: "forbidden" }, 403);
     }

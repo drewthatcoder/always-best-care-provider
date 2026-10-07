@@ -1,5 +1,5 @@
 import { handleCreateSetupIntent } from "../_shared/cardOnFileHandler.ts";
-import { createTestCustomerDirectory } from "../_shared/cardOnFileStore.ts";
+import { createTestCustomerDirectory, type ProfileAdmin } from "../_shared/cardOnFileStore.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import { qaUserIdSet } from "../_shared/qaAllowlist.ts";
@@ -14,8 +14,8 @@ Deno.serve(async (req) => {
     return await handleCreateSetupIntent(req, {
       stripe: getTestStripe(),
       publishableKey: getTestStripePublishableKey(),
-      directory: createTestCustomerDirectory(getServiceClient()),
-      allowUserIds: qaUserIdSet(Deno.env.get("QA_USER_IDS")),
+      directory: createTestCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
+      allowUserIds: qaUserIdSet(),
     });
   } catch (error) {
     return edgeFailure("create-setup-intent-test", error);

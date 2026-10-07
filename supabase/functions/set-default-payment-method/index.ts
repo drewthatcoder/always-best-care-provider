@@ -1,5 +1,5 @@
 import { handleSetDefaultPaymentMethod } from "../_shared/cardOnFileHandler.ts";
-import { createLiveCustomerDirectory } from "../_shared/cardOnFileStore.ts";
+import { createLiveCustomerDirectory, type ProfileAdmin } from "../_shared/cardOnFileStore.ts";
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import { getStripe } from "../_shared/stripe.ts";
@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   try {
     return await handleSetDefaultPaymentMethod(req, {
       stripe: getStripe(),
-      directory: createLiveCustomerDirectory(getServiceClient()),
+      directory: createLiveCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
       allowUserIds: null,
     });
   } catch (error) {

@@ -73,7 +73,8 @@ where status = 'approved'
 -- ---------------------------------------------------------------------------
 -- Guard. Providers cannot change payment columns or price_cents, cannot change
 -- service once the booking is approved or completed, and cannot move a booking
--- into or out of completed. service_role, an admin (has_role), and the
+-- into or out of completed. They also cannot change status while a charge is
+-- processing. service_role, an admin (has_role), and the
 -- postgres / supabase_admin session (SQL editor, migrations) can.
 -- Normal pre-approval edits are not blocked. pending_client -> approved
 -- snapshots price_cents for every caller.
@@ -132,6 +133,13 @@ begin
      is distinct from (new.status is not distinct from 'completed')
   then
     raise exception 'completed status is locked'
+      using errcode = '42501';
+  end if;
+
+  if old.payment_status is not distinct from 'processing'
+     and new.status is distinct from old.status
+  then
+    raise exception 'status is locked while a charge is processing'
       using errcode = '42501';
   end if;
 
@@ -240,6 +248,11 @@ begin
     where id = p_booking_id
       and status = 'approved'
     returning * into v_row;
+  end if;
+
+  if v_row is null then
+    raise exception 'finalize_booking_charge updated 0 rows for booking %', p_booking_id
+      using errcode = 'P0002';
   end if;
 
   return v_row;

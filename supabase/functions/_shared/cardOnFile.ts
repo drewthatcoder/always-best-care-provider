@@ -5,6 +5,7 @@
 
 import { cardDetailsFromPaymentMethod, loadDefaultCard, type CardDetails, type CardStripe } from "./paymentMethod.ts";
 import { CHARGE_MESSAGES, normalizeCustomerId } from "./bookingCharge.ts";
+import { STRIPE_API_VERSION } from "./stripeApiVersion.ts";
 
 export interface CustomerDirectory {
   listCustomerIds(userId: string): Promise<string[]>;
@@ -66,6 +67,12 @@ export function readStripeVersion(req: Request): string | null {
   return value ? value : null;
 }
 
+/** Mobile invoke() sends no custom headers. Ephemeral keys still need a version. */
+export function ephemeralKeyApiVersion(header: string | null | undefined): string {
+  const value = header?.trim();
+  return value ? value : STRIPE_API_VERSION;
+}
+
 function fail(status: number, code: string, error: string): CardHttpResult {
   return { status, body: { error, code } };
 }
@@ -102,7 +109,7 @@ export async function resolveOrCreateCustomer(
   const distinct = [...new Set(ids.map((id) => normalizeCustomerId(id)).filter((id): id is string => Boolean(id)))];
   if (distinct.length > 1) return fail(409, "multiple_customers", CHARGE_MESSAGES.multiple_customers);
 
-  let customerId = distinct[0] ?? null;
+  let customerId: string | null = distinct[0] ?? null;
   if (customerId && !(await customerStillExists(stripe, customerId))) customerId = null;
 
   if (!customerId) {
@@ -131,9 +138,7 @@ export async function createSetupIntentForUser(input: {
   stripeVersion: string | null;
   user: { id: string; email?: string | null; name?: string | null };
 }): Promise<CardHttpResult> {
-  if (!input.stripeVersion) {
-    return fail(400, "stripe_version_required", "stripe-version header is required");
-  }
+  const apiVersion = ephemeralKeyApiVersion(input.stripeVersion);
   const resolved = await resolveOrCreateCustomer(input.stripe, input.directory, input.user);
   if ("status" in resolved) return resolved;
 
@@ -145,7 +150,7 @@ export async function createSetupIntentForUser(input: {
   });
   const ephemeralKey = await input.stripe.ephemeralKeys.create(
     { customer: resolved.customerId },
-    { apiVersion: input.stripeVersion },
+    { apiVersion },
   );
   if (!setupIntent.client_secret || !ephemeralKey.secret) {
     return fail(500, "unknown", "Could not start card setup.");
@@ -172,11 +177,7 @@ export async function setDefaultPaymentMethodForUser(input: {
   directory: CustomerDirectory;
   userId: string;
   setupIntentId: string;
-  stripeVersion: string | null;
 }): Promise<CardHttpResult> {
-  if (!input.stripeVersion) {
-    return fail(400, "stripe_version_required", "stripe-version header is required");
-  }
   const setupIntentId = input.setupIntentId.trim();
   if (!setupIntentId.startsWith("seti_")) {
     return fail(400, "setup_intent_required", "setupIntentId is required");
@@ -224,11 +225,7 @@ export async function getPaymentMethodForUser(input: {
   stripe: SetupStripe;
   directory: CustomerDirectory;
   userId: string;
-  stripeVersion: string | null;
 }): Promise<CardHttpResult> {
-  if (!input.stripeVersion) {
-    return fail(400, "stripe_version_required", "stripe-version header is required");
-  }
   const distinct = [
     ...new Set(
       (await input.directory.listCustomerIds(input.userId))

@@ -113,9 +113,9 @@ Card on file (mobile client JWT):
 
 | Function | Body | Returns |
 | --- | --- | --- |
-| `create-setup-intent` | none. Header `stripe-version` required. | `{ setupIntentClientSecret, ephemeralKey, customerId, publishableKey }` |
-| `set-default-payment-method` | `{ setupIntentId }`. Header `stripe-version` required. | `{ brand, last4, expMonth, expYear }` |
-| `get-payment-method` | none. Header `stripe-version` required. | `{ brand, last4, expMonth, expYear }` or `null` |
+| `create-setup-intent` | none. Optional header `stripe-version`. When it is absent, the ephemeral key uses the server's pinned Stripe API version (`2024-06-20`). | `{ setupIntentClientSecret, ephemeralKey, customerId, publishableKey }` |
+| `set-default-payment-method` | `{ setupIntentId }` | `{ brand, last4, expMonth, expYear }` |
+| `get-payment-method` | none | `{ brand, last4, expMonth, expYear }` or `null` |
 
 `create-setup-intent` stores `profiles.stripe_customer_id` on every row for that user. Test variants (`*-test`) read and write Stripe ids only in `stripe_test_fixtures`.
 
@@ -124,7 +124,7 @@ Card on file (mobile client JWT):
 Do not flip `STRIPE_SECRET_KEY` to a test key. Do not put test `acct_` / `cus_` ids in `profiles` or `provider_profiles`.
 
 1. Apply `migrations/20261008120000_booking_complete_and_charge.sql` in the SQL editor after this PR is approved. Rollback: `migrations/rollback/20261008120000_booking_complete_and_charge.sql`.
-2. Set secrets (names only; paste values in the dashboard, never in git): `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_PUBLISHABLE_KEY`. Optional: `QA_USER_IDS`. Leave `STRIPE_SECRET_KEY` as it is. The full charge amount is transferred to the provider's connected account. There is no application fee.
+2. Set secrets (names only; paste values in the dashboard, never in git): `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_PUBLISHABLE_KEY`. Leave `STRIPE_SECRET_KEY` as it is. The QA allowlist is hardcoded. The full charge amount is transferred to the provider's connected account. There is no application fee.
 3. Deploy the test functions first and run the QA checklist before redeploying `charge-client`:
 
 ```bash
@@ -135,6 +135,8 @@ supabase functions deploy get-payment-method-test --project-ref uwgfitnpesgdkiwt
 ```
 
 4. After QA, deploy the live functions. Redeploying `charge-client` replaces the function the store app calls on Approve; the legacy branch is unchanged, but deploy it at a quiet time.
+
+   **Do not deploy the non-test `create-setup-intent` until we confirm nothing still calls the already-deployed v16.** That live function was deployed from outside this repo with a different contract: request `{ customerId }`, response `{ clientSecret }`. This repo's function returns `{ setupIntentClientSecret, ephemeralKey, customerId, publishableKey }`. Deploying it would replace v16. Keep the function name. The `*-test` variant is safe to deploy.
 
 ```bash
 supabase functions deploy charge-client --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
@@ -149,7 +151,7 @@ supabase functions deploy get-payment-method --project-ref uwgfitnpesgdkiwtekcb 
 
 1. Confirm `STRIPE_TEST_SECRET_KEY` (test mode). Do not change `STRIPE_SECRET_KEY`.
 2. Deploy `charge-client-test` only. Do not redeploy `charge-client` until QA passes.
-3. Create test fixtures with the test key and store them in `stripe_test_fixtures`: a test customer for qa-client with `pm_card_visa` as the default, and a test Connect account for qa-provider with `charges_enabled`.
+3. Create test fixtures with the test key and store them in `stripe_test_fixtures`: a test customer for qa-client with `pm_card_visa` as the default, and a test Connect account for qa-provider with both `charges_enabled` and `payouts_enabled`.
 4. Run the provider app with `VITE_CHARGE_FUNCTION=charge-client-test` and `VITE_ENABLE_COMPLETE_AND_CHARGE=true`, signed in as qa-provider.
 5. Cases:
    - (a) No card, before the client fixture, on booking `bc79ddc2`. Expect `no_card`. The booking stays approved.
