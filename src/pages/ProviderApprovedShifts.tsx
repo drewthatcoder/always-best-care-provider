@@ -4,7 +4,13 @@ import JobCard, { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { mapBookingToJob, type BookingRow, type ClientNameMap } from '@/lib/providerJobs';
+import {
+  APPROVED_SHIFTS_PAGE_STATUSES,
+  mapBookingToJob,
+  selectApprovedShifts,
+  type BookingRow,
+  type ClientNameMap,
+} from '@/lib/providerJobs';
 import { CheckCircle2 } from 'lucide-react';
 
 const ProviderApprovedShifts = () => {
@@ -12,6 +18,7 @@ const ProviderApprovedShifts = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [completedJobs, setCompletedJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -28,7 +35,7 @@ const ProviderApprovedShifts = () => {
         .from('bookings')
         .select('*')
         .eq('provider_user_id', user.id)
-        .in('status', ['approved', 'pending_client'])
+        .in('status', [...APPROVED_SHIFTS_PAGE_STATUSES])
         .order('scheduled_date', { ascending: true });
 
       if (error) {
@@ -37,9 +44,12 @@ const ProviderApprovedShifts = () => {
         return;
       }
 
-      const rows = (bookings || []) as unknown as BookingRow[];
+      // Completed (charged) visits stay visible in their own section instead of disappearing.
+      const { active, completed } = selectApprovedShifts((bookings || []) as unknown as BookingRow[], user.id);
+      const rows = [...active, ...completed];
       if (rows.length === 0) {
         setJobs([]);
+        setCompletedJobs([]);
         setLoading(false);
         return;
       }
@@ -56,7 +66,8 @@ const ProviderApprovedShifts = () => {
         });
       }
 
-      setJobs(rows.map((b) => mapBookingToJob(b, profileMap)));
+      setJobs(active.map((b) => mapBookingToJob(b, profileMap)));
+      setCompletedJobs(completed.map((b) => mapBookingToJob(b, profileMap)));
       setLoading(false);
     };
 
@@ -79,7 +90,7 @@ const ProviderApprovedShifts = () => {
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading shifts...</p>
           </div>
-        ) : jobs.length === 0 ? (
+        ) : jobs.length === 0 && completedJobs.length === 0 ? (
           <div className="text-center py-12 space-y-3">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8 text-primary" />
@@ -88,10 +99,29 @@ const ProviderApprovedShifts = () => {
             <p className="text-xs text-muted-foreground">Shifts you confirm will appear here once approved by the client.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
-            ))}
+          <div className="space-y-6">
+            {jobs.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No approved shifts right now.</p>
+            ) : (
+              <div className="space-y-4" data-testid="approved-shifts">
+                {jobs.map((job) => (
+                  <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
+                ))}
+              </div>
+            )}
+            {completedJobs.length > 0 && (
+              <section aria-labelledby="approved-completed-title" data-testid="approved-completed-shifts" className="space-y-3">
+                <h2 id="approved-completed-title" className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                  Completed ({completedJobs.length})
+                </h2>
+                <div className="space-y-4">
+                  {completedJobs.map((job) => (
+                    <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>

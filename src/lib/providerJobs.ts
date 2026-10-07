@@ -83,6 +83,23 @@ export const selectCompletedJobs = (rows: BookingRow[], providerUserId: string):
       return (b.start_time || '').localeCompare(a.start_time || '');
     });
 
+/** Statuses fetched by the Approved shifts page: active shifts plus completed (paid) visits. */
+export const APPROVED_SHIFTS_PAGE_STATUSES = ['approved', 'pending_client', 'completed'] as const;
+
+/**
+ * Approved shifts page lists: active (approved / awaiting client, date ascending) and
+ * completed visits (newest first) so a charged job stays visible to the provider.
+ */
+export const selectApprovedShifts = (
+  rows: BookingRow[],
+  providerUserId: string,
+): { active: BookingRow[]; completed: BookingRow[] } => ({
+  active: rows
+    .filter((b) => b.provider_user_id === providerUserId && (b.status === 'approved' || b.status === 'pending_client'))
+    .sort(byScheduledDateAsc),
+  completed: selectCompletedJobs(rows, providerUserId),
+});
+
 /** Local calendar date (yyyy-MM-dd) used to hide past-dated upcoming requests. */
 export const todayIsoDate = (now: Date = new Date()): string => format(now, 'yyyy-MM-dd');
 

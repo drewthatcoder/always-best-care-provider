@@ -6,6 +6,7 @@ import {
   jobStatusLabel,
   mapBookingToJob,
   paymentBadgeLabel,
+  selectApprovedShifts,
   selectCompletedJobs,
   selectMyJobs,
   selectUpcomingRequests,
@@ -151,6 +152,20 @@ describe('complete and charge helpers', () => {
     ];
     expect(selectMyJobs(rows, ME, TODAY).map((r) => r.id)).toEqual(['still-approved']);
     expect(selectCompletedJobs(rows, ME).map((r) => r.id)).toEqual(['done-new', 'done-old']);
+  });
+
+  it('keeps completed jobs visible on the Approved shifts page in their own list', () => {
+    const rows = [
+      row({ id: 'done', provider_user_id: ME, status: 'completed', scheduled_date: '2026-12-02', payment_status: 'succeeded' }),
+      row({ id: 'approved-late', provider_user_id: ME, status: 'approved', scheduled_date: '2026-10-09' }),
+      row({ id: 'pending', provider_user_id: ME, status: 'pending_client', scheduled_date: '2026-10-04' }),
+      row({ id: 'other-provider', provider_user_id: 'someone', status: 'completed', scheduled_date: '2026-10-01' }),
+      row({ id: 'cancelled', provider_user_id: ME, status: 'cancelled', scheduled_date: '2026-10-01' }),
+    ];
+    const { active, completed } = selectApprovedShifts(rows, ME);
+    expect(active.map((r) => r.id)).toEqual(['pending', 'approved-late']);
+    expect(completed.map((r) => r.id)).toEqual(['done']);
+    expect(canCompleteAndCharge(completed[0].status)).toBe(false);
   });
 
   it('maps price and payment status and labels paid or failed', () => {

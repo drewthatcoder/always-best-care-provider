@@ -26,7 +26,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Job } from './JobCard';
 import { canCompleteAndCharge, canConfirmShift, jobStatusLabel } from '@/lib/providerJobs';
-import { isCompleteAndChargeEnabled } from '@/lib/bookingCharge';
+import { formatCents, isCompleteAndChargeEnabled } from '@/lib/bookingCharge';
 import CallAlwaysBestCareButton from '@/components/CallAlwaysBestCareButton';
 import CompleteAndChargeDialog from '@/components/CompleteAndChargeDialog';
 
@@ -328,6 +328,20 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm, onCompl
                     Status: <span className="font-semibold">{jobStatusLabel(job.status)}</span>
                     {job.status === 'pending_client' && ' — waiting for the client to approve this shift.'}
                     {job.status === 'approved' && ' — the client approved this shift. The session is booked.'}
+                    {job.status === 'completed' && ' — this visit is complete.'}
+                  </span>
+                </div>
+              )}
+              {job.paymentStatus === 'succeeded' && (
+                <div
+                  data-testid="job-payment-note"
+                  className="bg-white/10 rounded-xl p-3 text-sm text-white/90 flex items-center gap-2"
+                >
+                  <CircleDollarSign className="w-4 h-4 shrink-0" />
+                  <span>
+                    <span className="font-semibold">Paid</span>
+                    {typeof (job.chargeAmountCents ?? job.priceCents) === 'number'
+                      && ` — ${formatCents((job.chargeAmountCents ?? job.priceCents) as number)} charged to the client's card on file.`}
                   </span>
                 </div>
               )}

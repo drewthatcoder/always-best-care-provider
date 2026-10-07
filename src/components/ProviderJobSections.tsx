@@ -26,7 +26,7 @@ const SectionHeader = ({ icon: Icon, title, count, id }: { icon: typeof Inbox; t
   </CardHeader>
 );
 
-/** Stacked "Upcoming requests" + "My jobs" sections for the provider dashboard. */
+/** Stacked "Upcoming requests", "My jobs" and "Completed" sections for the provider dashboard. */
 const ProviderJobSections = ({ loading, upcomingRequests, myJobs, completedJobs = [], onJobClick }: ProviderJobSectionsProps) => {
   if (loading) {
     return (
@@ -84,18 +84,23 @@ const ProviderJobSections = ({ loading, upcomingRequests, myJobs, completedJobs 
         </CardContent>
       </Card>
 
-      {completedJobs.length > 0 && (
-        <Card aria-labelledby="completed-jobs-title" data-testid="completed-jobs">
-          <SectionHeader icon={CheckCircle2} id="completed-jobs-title" title="Completed" count={completedJobs.length} />
-          <CardContent className="p-4 pt-0">
+      {/* Always shown so a job that just left My jobs after "Mark complete & charge" has a visible home. */}
+      <Card aria-labelledby="completed-jobs-title" data-testid="completed-jobs">
+        <SectionHeader icon={CheckCircle2} id="completed-jobs-title" title="Completed" count={completedJobs.length} />
+        <CardContent className="p-4 pt-0">
+          {completedJobs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              Completed and paid visits will appear here.
+            </p>
+          ) : (
             <div className="space-y-3">
               {completedJobs.map((job) => (
                 <JobCard key={job.id} job={job} onClick={() => onJobClick(job)} />
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
