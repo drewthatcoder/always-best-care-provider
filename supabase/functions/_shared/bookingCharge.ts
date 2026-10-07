@@ -254,11 +254,37 @@ export function paymentIntentDestination(pi: { transfer_data?: { destination?: u
   return null;
 }
 
+const STRIPE_CLASS_API_TYPES: Record<string, string> = {
+  StripeCardError: "card_error",
+  StripeInvalidRequestError: "invalid_request_error",
+  StripeIdempotencyError: "idempotency_error",
+  StripeAuthenticationError: "authentication_error",
+  StripePermissionError: "permission_error",
+  StripeRateLimitError: "rate_limit_error",
+  StripeConnectionError: "api_connection_error",
+  StripeAPIError: "api_error",
+};
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * The Stripe Node/Deno client sets `type` to the class name
+ * (StripeInvalidRequestError). The API type is `rawType`, then `raw.type`.
+ */
+export function stripeApiType(error: unknown): string {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const raw = record.raw && typeof record.raw === "object" ? (record.raw as Record<string, unknown>) : {};
+  const chosen = stringField(record.rawType) || stringField(raw.type) || stringField(record.type);
+  return STRIPE_CLASS_API_TYPES[chosen] ?? chosen;
+}
+
 export function mapStripeError(error: unknown): { httpStatus: number; code: string; error: string } {
   const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
   const code = typeof record.code === "string" ? record.code : "";
   const decline = typeof record.decline_code === "string" ? record.decline_code : "";
-  const type = typeof record.type === "string" ? record.type : "";
+  const type = stripeApiType(error);
   const message = typeof record.message === "string" && record.message.trim()
     ? record.message.trim()
     : "Payment failed";
@@ -625,6 +651,20 @@ export async function chargeBooking(
       idempotencyKey: bookingChargeIdempotencyKey(booking.id, attempt),
     });
   } catch (error) {
+    if (stripeApiType(error) === "idempotency_error") {
+      const prior = await findExistingCharge(deps.stripe, booking.id, assessment.customerId);
+      if (prior) {
+        const adopted = await finalizeSuccess(deps, booking, prior, {
+          amountCents: assessment.amountCents,
+          destination: assessment.destination,
+        });
+        if (adopted.status !== 200) return adopted;
+        return {
+          status: 200,
+          body: { ...adopted.body, code: "already_charged" },
+        };
+      }
+    }
     const mapped = mapStripeError(error);
     if (
       mapped.code === "card_declined"

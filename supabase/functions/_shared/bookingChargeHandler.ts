@@ -8,11 +8,16 @@ import {
 import { createChargeStore, type ChargeAdmin } from "./bookingChargeStore.ts";
 import { getServiceClient, requireUser } from "./supabase.ts";
 
+function resolveStripe(stripe: ChargeStripe | (() => ChargeStripe)): ChargeStripe {
+  return typeof stripe === "function" ? stripe() : stripe;
+}
+
 export async function handleProviderChargeRequest(
   req: Request,
   body: { action?: string; bookingId?: unknown },
   options: {
-    stripe: ChargeStripe;
+    /** Pass a function so a missing key is not read before the JWT check. */
+    stripe: ChargeStripe | (() => ChargeStripe);
     mode: "live" | "test";
     allowUserIds: ReadonlySet<string> | null;
     admin?: ChargeAdmin;
@@ -26,6 +31,7 @@ export async function handleProviderChargeRequest(
     return jsonResponse({ error: "Not allowed", code: "forbidden" }, 403);
   }
 
+  const stripe = resolveStripe(options.stripe);
   const bookingId = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
   if (!isBookingUuid(bookingId)) {
     return jsonResponse({ error: "bookingId is required", code: "invalid_booking" }, 400);
@@ -47,7 +53,7 @@ export async function handleProviderChargeRequest(
   }
 
   const deps = {
-    stripe: options.stripe,
+    stripe,
     store,
     mode: options.mode,
   };

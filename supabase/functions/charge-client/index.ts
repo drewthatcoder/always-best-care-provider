@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
   if (action === "preview" || action === "complete_and_charge") {
     try {
       return await handleProviderChargeRequest(req, { action, bookingId: parsed.bookingId }, {
-        stripe: getStripe() as unknown as ChargeStripe,
+        stripe: () => getStripe() as unknown as ChargeStripe,
         mode: "live",
         allowUserIds: null,
       });

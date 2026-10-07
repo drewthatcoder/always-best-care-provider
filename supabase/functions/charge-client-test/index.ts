@@ -2,7 +2,7 @@ import { handleProviderChargeRequest } from "../_shared/bookingChargeHandler.ts"
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import { qaUserIdSet } from "../_shared/qaAllowlist.ts";
-import { getTestStripe, getTestStripePublishableKey } from "../_shared/stripe.ts";
+import { getTestStripe } from "../_shared/stripe.ts";
 
 /**
  * Test-mode provider charge. Same shared module as charge-client's new actions.
@@ -15,8 +15,6 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
 
   try {
-    getTestStripePublishableKey();
-    const stripe = getTestStripe();
     const raw = await req.text();
     let body: { action?: string; bookingId?: unknown } = {};
     try {
@@ -29,7 +27,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "action must be preview or complete_and_charge", code: "unknown_action" }, 400);
     }
     return await handleProviderChargeRequest(req, body, {
-      stripe,
+      stripe: () => getTestStripe(),
       mode: "test",
       allowUserIds: qaUserIdSet(),
     });

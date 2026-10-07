@@ -29,21 +29,26 @@ async function authorize(
   return { user };
 }
 
+function resolveValue<T>(value: T | (() => T)): T {
+  return typeof value === "function" ? (value as () => T)() : value;
+}
+
 export async function handleCreateSetupIntent(
   req: Request,
   options: {
-    stripe: SetupStripe;
-    publishableKey: string;
-    directory: CustomerDirectory;
+    /** Pass a function so a missing key is not read before the JWT check. */
+    stripe: SetupStripe | (() => SetupStripe);
+    publishableKey: string | (() => string);
+    directory: CustomerDirectory | (() => CustomerDirectory);
     allowUserIds: ReadonlySet<string> | null;
   },
 ): Promise<Response> {
   const auth = await authorize(req, options.allowUserIds);
   if ("response" in auth && auth.response) return auth.response;
   const result = await createSetupIntentForUser({
-    stripe: options.stripe,
-    directory: options.directory,
-    publishableKey: options.publishableKey,
+    stripe: resolveValue(options.stripe),
+    directory: resolveValue(options.directory),
+    publishableKey: resolveValue(options.publishableKey),
     stripeVersion: readStripeVersion(req),
     user: userLabel(auth.user!),
   });
@@ -53,13 +58,15 @@ export async function handleCreateSetupIntent(
 export async function handleSetDefaultPaymentMethod(
   req: Request,
   options: {
-    stripe: SetupStripe;
-    directory: CustomerDirectory;
+    stripe: SetupStripe | (() => SetupStripe);
+    directory: CustomerDirectory | (() => CustomerDirectory);
     allowUserIds: ReadonlySet<string> | null;
   },
 ): Promise<Response> {
   const auth = await authorize(req, options.allowUserIds);
   if ("response" in auth && auth.response) return auth.response;
+  const stripe = resolveValue(options.stripe);
+  const directory = resolveValue(options.directory);
   let body: { setupIntentId?: unknown } = {};
   try {
     body = (await req.json()) as { setupIntentId?: unknown };
@@ -68,8 +75,8 @@ export async function handleSetDefaultPaymentMethod(
   }
   const setupIntentId = typeof body.setupIntentId === "string" ? body.setupIntentId : "";
   const result = await setDefaultPaymentMethodForUser({
-    stripe: options.stripe,
-    directory: options.directory,
+    stripe,
+    directory,
     userId: auth.user!.id,
     setupIntentId,
   });
@@ -79,16 +86,16 @@ export async function handleSetDefaultPaymentMethod(
 export async function handleGetPaymentMethod(
   req: Request,
   options: {
-    stripe: SetupStripe;
-    directory: CustomerDirectory;
+    stripe: SetupStripe | (() => SetupStripe);
+    directory: CustomerDirectory | (() => CustomerDirectory);
     allowUserIds: ReadonlySet<string> | null;
   },
 ): Promise<Response> {
   const auth = await authorize(req, options.allowUserIds);
   if ("response" in auth && auth.response) return auth.response;
   const result = await getPaymentMethodForUser({
-    stripe: options.stripe,
-    directory: options.directory,
+    stripe: resolveValue(options.stripe),
+    directory: resolveValue(options.directory),
     userId: auth.user!.id,
   });
   return jsonResponse(result.body, result.status);

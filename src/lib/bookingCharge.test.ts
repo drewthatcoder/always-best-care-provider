@@ -13,6 +13,7 @@ import {
   resolveStoredCustomer,
   serviceLabel,
   serviceTokens,
+  stripeApiType,
   succeededChargeSearchQuery,
   type BookingChargeDeps,
   type BookingForCharge,
@@ -155,6 +156,27 @@ describe("stripe error mapping", () => {
       httpStatus: 409,
       code: "stripe_config_error",
     });
+    expect(stripeApiType({
+      type: "StripeInvalidRequestError",
+      rawType: "invalid_request_error",
+      raw: { type: "card_error" },
+    })).toBe("invalid_request_error");
+    expect(mapStripeError({
+      type: "StripeInvalidRequestError",
+      rawType: "invalid_request_error",
+      message: "No such destination",
+    })).toMatchObject({ httpStatus: 409, code: "stripe_config_error", error: "No such destination" });
+    expect(mapStripeError({
+      type: "StripeInvalidRequestError",
+      raw: { type: "invalid_request_error" },
+      message: "No such destination",
+    })).toMatchObject({ httpStatus: 409, code: "stripe_config_error" });
+    expect(mapStripeError({
+      type: "StripeCardError",
+      rawType: "card_error",
+      code: "card_declined",
+      message: "Your card was declined.",
+    })).toMatchObject({ httpStatus: 402, code: "card_declined" });
   });
 
   it("matches a listed payment intent only for this booking and a blocking status", () => {
@@ -279,6 +301,54 @@ describe("chargeBooking", () => {
     const stripe = happyStripe().stripe;
     stripe.paymentIntents.create = vi.fn(async () => {
       throw { type: "invalid_request_error", message: "The destination account is invalid." };
+    });
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe("stripe_config_error");
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+  });
+
+  it("adopts an existing charge when Stripe returns an idempotency error", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const { stripe } = happyStripe();
+    stripe.paymentIntents.create = vi.fn(async () => {
+      throw {
+        type: "StripeIdempotencyError",
+        rawType: "idempotency_error",
+        message: "Keys for idempotent requests can only be used with the same parameters they were first used with.",
+      };
+    });
+    let lookups = 0;
+    stripe.paymentIntents.list = vi.fn(async () => {
+      lookups += 1;
+      if (lookups === 1) return { data: [] };
+      return {
+        data: [{
+          id: "pi_existing",
+          status: "processing",
+          amount: 5500,
+          metadata: { booking_id: current.id },
+          transfer_data: { destination: "acct_1" },
+        }],
+      };
+    });
+    const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
+    expect(result.status).toBe(200);
+    expect(result.body.code).toBe("already_charged");
+    expect(result.body.paymentIntentId).toBe("pi_existing");
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      success: true,
+      paymentIntentId: "pi_existing",
+    }));
+  });
+
+  it("marks an idempotency error failed when no charge exists for the booking", async () => {
+    const current = booking();
+    const store = storeFor(current);
+    const stripe = happyStripe().stripe;
+    stripe.paymentIntents.create = vi.fn(async () => {
+      throw { type: "StripeIdempotencyError", rawType: "idempotency_error", message: "Keys for idempotent requests can only be used with the same parameters." };
     });
     const result = await chargeBooking({ bookingId: current.id, providerUserId: "provider-1" }, deps(store, stripe));
     expect(result.status).toBe(409);

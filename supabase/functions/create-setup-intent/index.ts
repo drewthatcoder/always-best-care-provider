@@ -11,9 +11,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
   try {
     return await handleCreateSetupIntent(req, {
-      stripe: getStripe(),
-      publishableKey: getStripePublishableKey(),
-      directory: createLiveCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
+      stripe: () => getStripe(),
+      publishableKey: () => getStripePublishableKey(),
+      directory: () => createLiveCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
       allowUserIds: null,
     });
   } catch (error) {

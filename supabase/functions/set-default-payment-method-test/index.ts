@@ -12,8 +12,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
   try {
     return await handleSetDefaultPaymentMethod(req, {
-      stripe: getTestStripe(),
-      directory: createTestCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
+      stripe: () => getTestStripe(),
+      directory: () => createTestCustomerDirectory(getServiceClient() as unknown as ProfileAdmin),
       allowUserIds: qaUserIdSet(),
     });
   } catch (error) {
