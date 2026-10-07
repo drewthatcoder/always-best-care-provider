@@ -17,7 +17,31 @@ verify_jwt = true
 verify_jwt = false
 
 # Mobile BookingScreen sends the anon JWT, not a provider user JWT.
+# New actions (preview, complete_and_charge) check the provider user JWT in code.
 [functions.charge-client]
+verify_jwt = false
+
+# QA-only charge. Same shared module, STRIPE_TEST_SECRET_KEY, QA allowlist.
+[functions.charge-client-test]
+verify_jwt = false
+
+# Client card on file. Each requires a stripe-version header.
+[functions.create-setup-intent]
+verify_jwt = false
+
+[functions.set-default-payment-method]
+verify_jwt = false
+
+[functions.get-payment-method]
+verify_jwt = false
+
+[functions.create-setup-intent-test]
+verify_jwt = false
+
+[functions.set-default-payment-method-test]
+verify_jwt = false
+
+[functions.get-payment-method-test]
 verify_jwt = false
 
 # AdminApplications sends the admin user JWT. The function checks admin role itself.

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Briefcase, Inbox } from 'lucide-react';
+import { Briefcase, CheckCircle2, Inbox } from 'lucide-react';
 import JobCard, { type Job } from '@/components/JobCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,7 @@ interface ProviderJobSectionsProps {
   loading: boolean;
   upcomingRequests: Job[];
   myJobs: Job[];
+  completedJobs?: Job[];
   onJobClick: (job: Job) => void;
 }
 
@@ -26,7 +27,7 @@ const SectionHeader = ({ icon: Icon, title, count, id }: { icon: typeof Inbox; t
 );
 
 /** Stacked "Upcoming requests" + "My jobs" sections for the provider dashboard. */
-const ProviderJobSections = ({ loading, upcomingRequests, myJobs, onJobClick }: ProviderJobSectionsProps) => {
+const ProviderJobSections = ({ loading, upcomingRequests, myJobs, completedJobs = [], onJobClick }: ProviderJobSectionsProps) => {
   if (loading) {
     return (
       <div className="text-center py-12">
@@ -82,6 +83,19 @@ const ProviderJobSections = ({ loading, upcomingRequests, myJobs, onJobClick }: 
           )}
         </CardContent>
       </Card>
+
+      {completedJobs.length > 0 && (
+        <Card aria-labelledby="completed-jobs-title" data-testid="completed-jobs">
+          <SectionHeader icon={CheckCircle2} id="completed-jobs-title" title="Completed" count={completedJobs.length} />
+          <CardContent className="p-4 pt-0">
+            <div className="space-y-3">
+              {completedJobs.map((job) => (
+                <JobCard key={job.id} job={job} onClick={() => onJobClick(job)} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

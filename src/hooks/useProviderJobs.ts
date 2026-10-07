@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   MY_JOB_STATUSES,
   mapBookingToJob,
+  selectCompletedJobs,
   selectMyJobs,
   selectUpcomingRequests,
   todayIsoDate,
@@ -30,6 +31,7 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
   const [checkingStatus, setCheckingStatus] = useState(enabled);
   const [upcomingRequests, setUpcomingRequests] = useState<Job[]>([]);
   const [myJobs, setMyJobs] = useState<Job[]>([]);
+  const [completedJobs, setCompletedJobs] = useState<Job[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(enabled);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -60,7 +62,7 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
       setLoadingJobs(true);
       const today = todayIsoDate();
 
-      const [upcomingRes, mineRes] = await Promise.all([
+      const [upcomingRes, mineRes, completedRes] = await Promise.all([
         // Open requests — RLS limits these to the provider's service zip codes
         supabase
           .from('bookings')
@@ -75,16 +77,25 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
           .eq('provider_user_id', user.id)
           .in('status', [...MY_JOB_STATUSES])
           .order('scheduled_date', { ascending: true }),
+        supabase
+          .from('bookings')
+          .select('*')
+          .eq('provider_user_id', user.id)
+          .eq('status', 'completed')
+          .order('scheduled_date', { ascending: false })
+          .limit(50),
       ]);
 
       if (upcomingRes.error) console.error('Error fetching upcoming requests:', upcomingRes.error);
       if (mineRes.error) console.error('Error fetching my jobs:', mineRes.error);
+      if (completedRes.error) console.error('Error fetching completed jobs:', completedRes.error);
 
       // Re-apply the filters client-side so the lists stay correct regardless of query shape.
       const upcomingRows = selectUpcomingRequests((upcomingRes.data as unknown as BookingRow[]) || [], today);
       const myRows = selectMyJobs((mineRes.data as unknown as BookingRow[]) || [], user.id, today);
+      const completedRows = selectCompletedJobs((completedRes.data as unknown as BookingRow[]) || [], user.id);
 
-      const clientIds = [...new Set([...upcomingRows, ...myRows].map((b) => b.client_user_id).filter(Boolean))];
+      const clientIds = [...new Set([...upcomingRows, ...myRows, ...completedRows].map((b) => b.client_user_id).filter(Boolean))];
       const profileMap: ClientNameMap = {};
       if (clientIds.length > 0) {
         const { data: profiles } = await supabase
@@ -99,6 +110,7 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
       if (cancelled) return;
       setUpcomingRequests(upcomingRows.map((b) => mapBookingToJob(b, profileMap)));
       setMyJobs(myRows.map((b) => mapBookingToJob(b, profileMap)));
+      setCompletedJobs(completedRows.map((b) => mapBookingToJob(b, profileMap)));
       setLoadingJobs(false);
     };
 
@@ -113,11 +125,17 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
     const patch = (list: Job[]) => list.map((j) => (j.id === job.id ? { ...j, providerViewed: true } : j));
     setUpcomingRequests(patch);
     setMyJobs(patch);
+    setCompletedJobs(patch);
   }, []);
 
   /** Called after a provider confirms a shift: the request leaves the open list, then lists reload. */
   const handleConfirmed = useCallback((jobId: string) => {
     setUpcomingRequests((prev) => prev.filter((j) => j.id !== jobId));
+    setReloadKey((k) => k + 1);
+  }, []);
+
+  /** Reload after a visit is completed and charged so it leaves My jobs and can show under Completed. */
+  const handleCompleted = useCallback(() => {
     setReloadKey((k) => k + 1);
   }, []);
 
@@ -127,8 +145,10 @@ export const useProviderJobs = ({ enabled = true }: UseProviderJobsOptions = {})
     loadingJobs,
     upcomingRequests,
     myJobs,
+    completedJobs,
     markViewed,
     handleConfirmed,
+    handleCompleted,
   };
 };
 
