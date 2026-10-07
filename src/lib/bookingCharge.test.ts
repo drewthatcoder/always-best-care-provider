@@ -2,14 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   CHARGE_MESSAGES,
-  applicationFeeCents,
   bookingChargeIdempotencyKey,
   bookingPriceCents,
   chargeAmountCents,
   chargeBooking,
   mapStripeError,
   previewBookingCharge,
-  readApplicationFeeBps,
   resolveFixtureCustomer,
   resolveStoredCustomer,
   serviceLabel,
@@ -92,18 +90,10 @@ describe("booking price formula", () => {
   });
 });
 
-describe("idempotency key and fee", () => {
+describe("idempotency key", () => {
   it("builds booking-charge:<id>:<attempt>", () => {
     expect(bookingChargeIdempotencyKey(BOOKING_ID, 0)).toBe(`booking-charge:${BOOKING_ID}:0`);
     expect(bookingChargeIdempotencyKey(BOOKING_ID, 2)).toBe(`booking-charge:${BOOKING_ID}:2`);
-  });
-
-  it("defaults the application fee to 0 bps and omits a zero fee", () => {
-    expect(readApplicationFeeBps(undefined)).toBe(0);
-    expect(readApplicationFeeBps("")).toBe(0);
-    expect(readApplicationFeeBps("250")).toBe(250);
-    expect(applicationFeeCents(5500, 0)).toBeNull();
-    expect(applicationFeeCents(5500, 1000)).toBe(550);
   });
 
   it("searches succeeded charges by booking id", () => {
@@ -158,7 +148,7 @@ describe("stripe error mapping", () => {
 });
 
 function deps(store: ChargeStore, stripe: BookingChargeDeps["stripe"], mode: "live" | "test" = "live"): BookingChargeDeps {
-  return { stripe, store, mode, applicationFeeBps: 0 };
+  return { stripe, store, mode };
 }
 
 function happyStripe(create = vi.fn(async (
@@ -226,7 +216,7 @@ describe("chargeBooking", () => {
     expect(params.confirm).toBe(true);
     expect(params.off_session).toBe(true);
     expect(params.transfer_data).toEqual({ destination: "acct_1" });
-    expect(params.application_fee_amount).toBeUndefined();
+    expect(params).not.toHaveProperty("application_fee_amount");
     expect(params.metadata).toMatchObject({ booking_id: current.id, source: "provider_complete" });
     expect(options).toEqual({ idempotencyKey: `booking-charge:${current.id}:2` });
     expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ success: true, paymentIntentId: "pi_new" }));

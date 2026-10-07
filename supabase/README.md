@@ -105,7 +105,7 @@ Approval mail (`notify-provider-status`) only reminds providers to return the si
 
 ## Mark complete & charge
 
-Provider jobs can be completed and charged from the server. The amount is `bookings.price_cents`, or `booking_price_cents(service)` when that is null (5500 cents for each of the first two comma-separated services, 4500 for each after). The client-supplied amount is ignored. The legacy `charge-client` body (no `action`) is unchanged.
+Provider jobs can be completed and charged from the server. The amount is `bookings.price_cents`, or `booking_price_cents(service)` when that is null (5500 cents for each of the first two comma-separated services, 4500 for each after). The client-supplied amount is ignored. The full amount is transferred to the provider's connected account, with no application fee. The legacy `charge-client` body (no `action`) is unchanged.
 
 The "Mark complete & charge" button is hidden unless `VITE_ENABLE_COMPLETE_AND_CHARGE=true`. Point the app at the test function with `VITE_CHARGE_FUNCTION=charge-client-test`. The scheduled-date `too_early` gate is not enforced yet.
 
@@ -124,7 +124,7 @@ Card on file (mobile client JWT):
 Do not flip `STRIPE_SECRET_KEY` to a test key. Do not put test `acct_` / `cus_` ids in `profiles` or `provider_profiles`.
 
 1. Apply `migrations/20261008120000_booking_complete_and_charge.sql` in the SQL editor after this PR is approved. Rollback: `migrations/rollback/20261008120000_booking_complete_and_charge.sql`.
-2. Set secrets (names only; paste values in the dashboard, never in git): `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_PUBLISHABLE_KEY`. Optional: `APPLICATION_FEE_BPS` (default 0), `QA_USER_IDS`. Leave `STRIPE_SECRET_KEY` as it is.
+2. Set secrets (names only; paste values in the dashboard, never in git): `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_PUBLISHABLE_KEY`. Optional: `QA_USER_IDS`. Leave `STRIPE_SECRET_KEY` as it is. The full charge amount is transferred to the provider's connected account. There is no application fee.
 3. Deploy the test functions first and run the QA checklist before redeploying `charge-client`:
 
 ```bash

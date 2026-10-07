@@ -2,7 +2,6 @@ import { handleProviderChargeRequest } from "../_shared/bookingChargeHandler.ts"
 import { jsonResponse, optionsResponse } from "../_shared/cors.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import { qaUserIdSet } from "../_shared/qaAllowlist.ts";
-import { readApplicationFeeBps } from "../_shared/bookingCharge.ts";
 import { getTestStripe, getTestStripePublishableKey } from "../_shared/stripe.ts";
 
 /**
@@ -32,7 +31,6 @@ Deno.serve(async (req) => {
     return await handleProviderChargeRequest(req, body, {
       stripe,
       mode: "test",
-      applicationFeeBps: readApplicationFeeBps(Deno.env.get("APPLICATION_FEE_BPS")),
       allowUserIds: qaUserIdSet(Deno.env.get("QA_USER_IDS")),
     });
   } catch (error) {

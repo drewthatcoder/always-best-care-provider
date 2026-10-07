@@ -118,7 +118,6 @@ export interface BookingChargeDeps {
   stripe: ChargeStripe;
   store: ChargeStore;
   mode: "live" | "test";
-  applicationFeeBps: number;
 }
 
 export interface ChargeHttpResult {
@@ -163,25 +162,6 @@ export function chargeAmountCents(
 export function bookingChargeIdempotencyKey(bookingId: string, chargeAttempts: number): string {
   const attempt = Number.isInteger(chargeAttempts) && chargeAttempts >= 0 ? chargeAttempts : 0;
   return `booking-charge:${bookingId}:${attempt}`;
-}
-
-export function readApplicationFeeBps(raw: string | undefined): number {
-  if (raw == null || raw.trim() === "") return 0;
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10_000) {
-    throw new Error("APPLICATION_FEE_BPS must be an integer from 0 to 10000");
-  }
-  return parsed;
-}
-
-/** Null means omit application_fee_amount (the platform takes no fee). */
-export function applicationFeeCents(amountCents: number, bps: number): number | null {
-  if (!Number.isInteger(bps) || bps <= 0) return null;
-  if (!Number.isInteger(amountCents) || amountCents <= 0) return null;
-  const fee = Math.round((amountCents * bps) / 10_000);
-  if (fee <= 0) return null;
-  if (fee >= amountCents) return amountCents > 1 ? amountCents - 1 : null;
-  return fee;
 }
 
 export function normalizeCustomerId(value: unknown): string | null {
@@ -549,7 +529,6 @@ export async function chargeBooking(
   }
 
   const attempt = booking.charge_attempts ?? 0;
-  const fee = applicationFeeCents(assessment.amountCents, deps.applicationFeeBps);
   const params: Record<string, unknown> = {
     amount: assessment.amountCents,
     currency: "usd",
@@ -569,7 +548,6 @@ export async function chargeBooking(
     },
     transfer_data: { destination: assessment.destination },
   };
-  if (fee != null) params.application_fee_amount = fee;
 
   let paymentIntent: PaymentIntentLike;
   try {

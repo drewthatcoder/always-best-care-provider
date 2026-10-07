@@ -6,7 +6,6 @@ export function edgeFailure(scope: string, error: unknown): Response {
   console.error(scope, message);
   if (
     message.startsWith("STRIPE_") ||
-    message.startsWith("APPLICATION_FEE_BPS") ||
     message.includes("must start with sk_test_") ||
     message.includes("must start with pk_test_") ||
     message.includes("mode does not match")

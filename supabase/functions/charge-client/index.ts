@@ -6,7 +6,6 @@ import {
 import { getStripe, isPlatformLive } from "../_shared/stripe.ts";
 import { livemodeFromStripeObject } from "../_shared/stripeMode.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
-import { readApplicationFeeBps } from "../_shared/bookingCharge.ts";
 import { handleProviderChargeRequest } from "../_shared/bookingChargeHandler.ts";
 import { edgeFailure } from "../_shared/edgeHttp.ts";
 import type { ChargeStripe } from "../_shared/bookingCharge.ts";
@@ -250,7 +249,6 @@ Deno.serve(async (req) => {
       return await handleProviderChargeRequest(req, { action, bookingId: parsed.bookingId }, {
         stripe: getStripe() as unknown as ChargeStripe,
         mode: "live",
-        applicationFeeBps: readApplicationFeeBps(Deno.env.get("APPLICATION_FEE_BPS")),
         allowUserIds: null,
       });
     } catch (error) {

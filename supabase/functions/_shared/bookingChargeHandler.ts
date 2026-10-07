@@ -14,7 +14,6 @@ export async function handleProviderChargeRequest(
   options: {
     stripe: ChargeStripe;
     mode: "live" | "test";
-    applicationFeeBps: number;
     allowUserIds: ReadonlySet<string> | null;
     admin?: ChargeAdmin;
   },
@@ -49,7 +48,6 @@ export async function handleProviderChargeRequest(
     stripe: options.stripe,
     store,
     mode: options.mode,
-    applicationFeeBps: options.applicationFeeBps,
   };
   const action = typeof body.action === "string" ? body.action.trim() : "";
   const result = action === "preview"
