@@ -15,14 +15,17 @@ import { toast } from 'sonner';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
-const stripePromise = loadStripe(
-  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
-  'pk_test_51TBfSlCv6ZSrYUtDaodmtphvZgyWIhl3BesDnis33S8MEXAZ0TIWhrA81PWrsLs7f6VxQ2Y96OzhtEM6ObW5lt4l00JkNr2bWe'
-);
+const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+
+if (!STRIPE_PUBLISHABLE_KEY) {
+  console.error('VITE_STRIPE_PUBLISHABLE_KEY is not set; provider sign-up payments are disabled.');
+}
+
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const PRICE_IDS = {
-  monthly:     'price_1TIBHpCv6ZSrYUtDLRps2vzO',
-  'monthly-2': 'price_1TIBInCv6ZSrYUtDnnotfVFQ',
+  monthly:     'price_1TEIrfCv6ZSrYUtDsndS9YWK',
+  'monthly-2': 'price_1TEIsOCv6ZSrYUtD73YcE4ZS',
 };
 
 const ONBOARDING_PRICE_ID = 'price_1U30GlCv6ZSrYUtDiu049FtM';
@@ -589,10 +592,23 @@ const StepConfirmation = () => {
   );
 };
 
-const Register = () => (
-  <Elements stripe={stripePromise}>
-    <RegisterForm />
-  </Elements>
+const PaymentsUnavailable = () => (
+  <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="max-w-md text-center space-y-3">
+      <Logo />
+      <h1 className="text-xl font-semibold">Payments are unavailable</h1>
+      <p className="text-muted-foreground">Please contact support to complete your registration.</p>
+    </div>
+  </div>
 );
+
+const Register = () =>
+  stripePromise ? (
+    <Elements stripe={stripePromise}>
+      <RegisterForm />
+    </Elements>
+  ) : (
+    <PaymentsUnavailable />
+  );
 
 export default Register;
