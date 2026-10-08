@@ -6,6 +6,9 @@ import {
 import { getStripe, isPlatformLive } from "../_shared/stripe.ts";
 import { livemodeFromStripeObject } from "../_shared/stripeMode.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
+import { handleProviderChargeRequest } from "../_shared/bookingChargeHandler.ts";
+import { edgeFailure } from "../_shared/edgeHttp.ts";
+import type { ChargeStripe } from "../_shared/bookingCharge.ts";
 
 /**
  * charge-client — mobile BookingScreen contract (do not change mobile).
@@ -46,7 +49,7 @@ function paymentMethodIdFromStripe(value: unknown): string | null {
   return null;
 }
 
-Deno.serve(async (req) => {
+async function serveLegacyChargeClient(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return optionsResponse();
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
@@ -220,4 +223,44 @@ Deno.serve(async (req) => {
     console.error("charge-client", message);
     return jsonResponse({ error: message }, 400);
   }
+}
+
+/**
+ * Legacy mobile Approve charges stay in serveLegacyChargeClient and are unchanged.
+ * action "preview" | "complete_and_charge" is the provider Mark complete & charge path.
+ * A body with no action (the legacy contract) never enters that path.
+ */
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return optionsResponse();
+  if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+
+  const raw = await req.text();
+  let parsed: { action?: unknown; bookingId?: unknown } = {};
+  let action = "";
+  try {
+    parsed = raw ? JSON.parse(raw) as { action?: unknown; bookingId?: unknown } : {};
+    if (typeof parsed.action === "string") action = parsed.action.trim();
+  } catch {
+    action = "";
+  }
+
+  if (action === "preview" || action === "complete_and_charge") {
+    try {
+      return await handleProviderChargeRequest(req, { action, bookingId: parsed.bookingId }, {
+        stripe: () => getStripe() as unknown as ChargeStripe,
+        mode: "live",
+        allowUserIds: null,
+      });
+    } catch (error) {
+      return edgeFailure("charge-client", error);
+    }
+  }
+
+  if (action) {
+    return jsonResponse({ error: "Unknown action", code: "unknown_action" }, 400);
+  }
+
+  const headers = new Headers(req.headers);
+  headers.delete("content-length");
+  return serveLegacyChargeClient(new Request(req.url, { method: "POST", headers, body: raw }));
 });

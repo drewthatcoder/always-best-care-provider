@@ -22,6 +22,8 @@ const ProviderDashboard = () => {
     myJobs,
     markViewed,
     handleConfirmed,
+    handleCompleted,
+    completedJobs,
   } = useProviderJobs();
 
   const handleJobClick = async (job: Job) => {
@@ -114,11 +116,18 @@ const ProviderDashboard = () => {
           loading={loadingJobs}
           upcomingRequests={upcomingRequests}
           myJobs={myJobs}
+          completedJobs={completedJobs}
           onJobClick={handleJobClick}
         />
       </div>
 
-      <JobDetailsSheet job={selectedJob} open={sheetOpen} onOpenChange={setSheetOpen} onConfirm={handleConfirmed} />
+      <JobDetailsSheet
+        job={selectedJob}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        onConfirm={handleConfirmed}
+        onCompleted={handleCompleted}
+      />
       <BottomNav />
     </div>
   );

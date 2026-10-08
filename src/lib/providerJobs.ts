@@ -27,6 +27,9 @@ export interface BookingRow {
   client_additional_info?: string | null;
   client_recurring_weekly?: string | null;
   notes?: string | null;
+  price_cents?: number | null;
+  payment_status?: string | null;
+  charge_amount_cents?: number | null;
 }
 
 export type ClientNameMap = Record<string, { first_name: string | null; last_name: string | null }>;
@@ -58,6 +61,44 @@ export const jobStatusLabel = (status: string): string => JOB_STATUS_LABELS[stat
  * Shifts already sent to / approved by the client must not show "Confirm Shift" again.
  */
 export const canConfirmShift = (status: string): boolean => status === 'upcoming';
+
+/**
+ * Approved jobs can be marked complete and charged.
+ * The scheduled-date gate (too_early) is intentionally not applied yet.
+ */
+export const canCompleteAndCharge = (status: string): boolean => status === 'approved';
+
+export const paymentBadgeLabel = (status: string | null | undefined): 'Paid' | 'Payment failed' | null => {
+  if (status === 'succeeded') return 'Paid';
+  if (status === 'failed') return 'Payment failed';
+  return null;
+};
+
+/** Completed visits stay out of My jobs and render in their own section, newest first. */
+export const selectCompletedJobs = (rows: BookingRow[], providerUserId: string): BookingRow[] =>
+  rows
+    .filter((b) => b.provider_user_id === providerUserId && b.status === 'completed')
+    .sort((a, b) => {
+      if (a.scheduled_date !== b.scheduled_date) return a.scheduled_date < b.scheduled_date ? 1 : -1;
+      return (b.start_time || '').localeCompare(a.start_time || '');
+    });
+
+/** Statuses fetched by the Approved shifts page: active shifts plus completed (paid) visits. */
+export const APPROVED_SHIFTS_PAGE_STATUSES = ['approved', 'pending_client', 'completed'] as const;
+
+/**
+ * Approved shifts page lists: active (approved / awaiting client, date ascending) and
+ * completed visits (newest first) so a charged job stays visible to the provider.
+ */
+export const selectApprovedShifts = (
+  rows: BookingRow[],
+  providerUserId: string,
+): { active: BookingRow[]; completed: BookingRow[] } => ({
+  active: rows
+    .filter((b) => b.provider_user_id === providerUserId && (b.status === 'approved' || b.status === 'pending_client'))
+    .sort(byScheduledDateAsc),
+  completed: selectCompletedJobs(rows, providerUserId),
+});
 
 /** Local calendar date (yyyy-MM-dd) used to hide past-dated upcoming requests. */
 export const todayIsoDate = (now: Date = new Date()): string => format(now, 'yyyy-MM-dd');
@@ -121,5 +162,9 @@ export const mapBookingToJob = (b: BookingRow, profiles: ClientNameMap = {}): Jo
     clientAdditionalInfo: b.client_additional_info ?? undefined,
     clientRecurringWeekly: b.client_recurring_weekly ?? undefined,
     notes: b.notes ?? undefined,
+    scheduledDate: b.scheduled_date,
+    priceCents: b.price_cents ?? null,
+    chargeAmountCents: b.charge_amount_cents ?? null,
+    paymentStatus: (b.payment_status as Job['paymentStatus']) ?? null,
   };
 };

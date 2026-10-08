@@ -4,7 +4,13 @@ import JobCard, { type Job } from '@/components/JobCard';
 import JobDetailsSheet from '@/components/JobDetailsSheet';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { format } from 'date-fns';
+import {
+  APPROVED_SHIFTS_PAGE_STATUSES,
+  mapBookingToJob,
+  selectApprovedShifts,
+  type BookingRow,
+  type ClientNameMap,
+} from '@/lib/providerJobs';
 import { CheckCircle2 } from 'lucide-react';
 
 const ProviderApprovedShifts = () => {
@@ -12,7 +18,9 @@ const ProviderApprovedShifts = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [completedJobs, setCompletedJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -24,10 +32,10 @@ const ProviderApprovedShifts = () => {
       setLoading(true);
 
       const { data: bookings, error } = await supabase
-        .from('bookings' as any)
+        .from('bookings')
         .select('*')
         .eq('provider_user_id', user.id)
-        .in('status', ['approved', 'pending_client'])
+        .in('status', [...APPROVED_SHIFTS_PAGE_STATUSES])
         .order('scheduled_date', { ascending: true });
 
       if (error) {
@@ -36,60 +44,35 @@ const ProviderApprovedShifts = () => {
         return;
       }
 
-      if (!bookings || bookings.length === 0) {
+      // Completed (charged) visits stay visible in their own section instead of disappearing.
+      const { active, completed } = selectApprovedShifts((bookings || []) as unknown as BookingRow[], user.id);
+      const rows = [...active, ...completed];
+      if (rows.length === 0) {
         setJobs([]);
+        setCompletedJobs([]);
         setLoading(false);
         return;
       }
 
-      const clientIds = [...new Set((bookings as any[]).map((b: any) => b.client_user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, first_name, last_name')
-        .in('user_id', clientIds);
+      const clientIds = [...new Set(rows.map((b) => b.client_user_id).filter(Boolean))];
+      const profileMap: ClientNameMap = {};
+      if (clientIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, first_name, last_name')
+          .in('user_id', clientIds);
+        (profiles || []).forEach((p) => {
+          profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name };
+        });
+      }
 
-      const profileMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
-      (profiles || []).forEach((p: any) => {
-        profileMap[p.user_id] = { first_name: p.first_name, last_name: p.last_name };
-      });
-
-      const mapped: Job[] = (bookings as any[]).map((b: any) => {
-        const profile = profileMap[b.client_user_id];
-        const dateObj = new Date(b.scheduled_date + 'T00:00:00');
-        return {
-          id: b.id,
-          date: format(dateObj, 'EEE MMM dd yyyy').toUpperCase(),
-          startTime: b.start_time,
-          endTime: b.end_time,
-          clientFirstName: profile?.first_name ?? undefined,
-          clientLastName: profile?.last_name ?? undefined,
-          service: b.service,
-          clientZipCode: b.client_zip_code ?? undefined,
-          status: b.status as Job['status'],
-          providerViewed: b.provider_viewed ?? false,
-          clientPhone: b.client_phone ?? undefined,
-          clientAddress: b.client_address ?? undefined,
-          clientAddressLine2: b.client_address_line2 ?? undefined,
-          clientCity: b.client_city ?? undefined,
-          clientState: b.client_state ?? undefined,
-          clientDateOfBirth: b.client_date_of_birth ?? undefined,
-          clientHeight: b.client_height ?? undefined,
-          clientWeight: b.client_weight ?? undefined,
-          clientResponsibleParty: b.client_responsible_party ?? undefined,
-          clientResponsiblePartyName: b.client_responsible_party_name ?? undefined,
-          clientResponsiblePartyEmail: b.client_responsible_party_email ?? undefined,
-          clientAdditionalInfo: b.client_additional_info ?? undefined,
-          clientRecurringWeekly: b.client_recurring_weekly ?? undefined,
-          notes: b.notes ?? undefined,
-        };
-      });
-
-      setJobs(mapped);
+      setJobs(active.map((b) => mapBookingToJob(b, profileMap)));
+      setCompletedJobs(completed.map((b) => mapBookingToJob(b, profileMap)));
       setLoading(false);
     };
 
     fetchApprovedShifts();
-  }, [user]);
+  }, [user, reloadKey]);
 
   const handleJobClick = (job: Job) => {
     setSelectedJob(job);
@@ -107,7 +90,7 @@ const ProviderApprovedShifts = () => {
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading shifts...</p>
           </div>
-        ) : jobs.length === 0 ? (
+        ) : jobs.length === 0 && completedJobs.length === 0 ? (
           <div className="text-center py-12 space-y-3">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8 text-primary" />
@@ -116,15 +99,39 @@ const ProviderApprovedShifts = () => {
             <p className="text-xs text-muted-foreground">Shifts you confirm will appear here once approved by the client.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
-            ))}
+          <div className="space-y-6">
+            {jobs.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No approved shifts right now.</p>
+            ) : (
+              <div className="space-y-4" data-testid="approved-shifts">
+                {jobs.map((job) => (
+                  <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
+                ))}
+              </div>
+            )}
+            {completedJobs.length > 0 && (
+              <section aria-labelledby="approved-completed-title" data-testid="approved-completed-shifts" className="space-y-3">
+                <h2 id="approved-completed-title" className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                  Completed ({completedJobs.length})
+                </h2>
+                <div className="space-y-4">
+                  {completedJobs.map((job) => (
+                    <JobCard key={job.id} job={job} onClick={() => handleJobClick(job)} />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>
 
-      <JobDetailsSheet job={selectedJob} open={sheetOpen} onOpenChange={setSheetOpen} />
+      <JobDetailsSheet
+        job={selectedJob}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        onCompleted={() => setReloadKey((key) => key + 1)}
+      />
       <BottomNav />
     </div>
   );

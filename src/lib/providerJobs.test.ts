@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   MY_JOB_STATUSES,
+  canCompleteAndCharge,
   canConfirmShift,
   jobStatusLabel,
   mapBookingToJob,
+  paymentBadgeLabel,
+  selectApprovedShifts,
+  selectCompletedJobs,
   selectMyJobs,
   selectUpcomingRequests,
   todayIsoDate,
@@ -129,6 +133,48 @@ describe('mapBookingToJob', () => {
       status: 'upcoming',
       providerViewed: false,
     });
+  });
+});
+
+describe('complete and charge helpers', () => {
+  it('allows the charge action only for approved jobs', () => {
+    expect(canCompleteAndCharge('approved')).toBe(true);
+    for (const status of ['upcoming', 'pending_client', 'completed', 'cancelled', 'confirmed']) {
+      expect(canCompleteAndCharge(status)).toBe(false);
+    }
+  });
+
+  it('keeps completed jobs out of My jobs and lists them newest first', () => {
+    const rows = [
+      row({ id: 'done-old', provider_user_id: ME, status: 'completed', scheduled_date: '2026-09-01' }),
+      row({ id: 'done-new', provider_user_id: ME, status: 'completed', scheduled_date: '2026-10-02' }),
+      row({ id: 'still-approved', provider_user_id: ME, status: 'approved', scheduled_date: '2026-10-03' }),
+    ];
+    expect(selectMyJobs(rows, ME, TODAY).map((r) => r.id)).toEqual(['still-approved']);
+    expect(selectCompletedJobs(rows, ME).map((r) => r.id)).toEqual(['done-new', 'done-old']);
+  });
+
+  it('keeps completed jobs visible on the Approved shifts page in their own list', () => {
+    const rows = [
+      row({ id: 'done', provider_user_id: ME, status: 'completed', scheduled_date: '2026-12-02', payment_status: 'succeeded' }),
+      row({ id: 'approved-late', provider_user_id: ME, status: 'approved', scheduled_date: '2026-10-09' }),
+      row({ id: 'pending', provider_user_id: ME, status: 'pending_client', scheduled_date: '2026-10-04' }),
+      row({ id: 'other-provider', provider_user_id: 'someone', status: 'completed', scheduled_date: '2026-10-01' }),
+      row({ id: 'cancelled', provider_user_id: ME, status: 'cancelled', scheduled_date: '2026-10-01' }),
+    ];
+    const { active, completed } = selectApprovedShifts(rows, ME);
+    expect(active.map((r) => r.id)).toEqual(['pending', 'approved-late']);
+    expect(completed.map((r) => r.id)).toEqual(['done']);
+    expect(canCompleteAndCharge(completed[0].status)).toBe(false);
+  });
+
+  it('maps price and payment status and labels paid or failed', () => {
+    const job = mapBookingToJob(row({ price_cents: 5500, payment_status: 'succeeded', charge_amount_cents: 5500 }));
+    expect(job.priceCents).toBe(5500);
+    expect(job.paymentStatus).toBe('succeeded');
+    expect(paymentBadgeLabel('succeeded')).toBe('Paid');
+    expect(paymentBadgeLabel('failed')).toBe('Payment failed');
+    expect(paymentBadgeLabel('unpaid')).toBeNull();
   });
 });
 

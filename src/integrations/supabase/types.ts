@@ -41,6 +41,16 @@ export type Database = {
           service: string
           start_time: string
           status: string
+          charge_amount_cents: number | null
+          charge_attempts: number | null
+          charge_destination: string | null
+          charge_error: string | null
+          charge_livemode: boolean | null
+          charged_at: string | null
+          completed_at: string | null
+          payment_intent_id: string | null
+          payment_status: string
+          price_cents: number | null
           updated_at: string
         }
         Insert: {
@@ -69,6 +79,16 @@ export type Database = {
           service: string
           start_time: string
           status?: string
+          charge_amount_cents?: number | null
+          charge_attempts?: number | null
+          charge_destination?: string | null
+          charge_error?: string | null
+          charge_livemode?: boolean | null
+          charged_at?: string | null
+          completed_at?: string | null
+          payment_intent_id?: string | null
+          payment_status?: string
+          price_cents?: number | null
           updated_at?: string
         }
         Update: {
@@ -97,6 +117,16 @@ export type Database = {
           service?: string
           start_time?: string
           status?: string
+          charge_amount_cents?: number | null
+          charge_attempts?: number | null
+          charge_destination?: string | null
+          charge_error?: string | null
+          charge_livemode?: boolean | null
+          charged_at?: string | null
+          completed_at?: string | null
+          payment_intent_id?: string | null
+          payment_status?: string
+          price_cents?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -258,6 +288,7 @@ export type Database = {
           first_name: string | null
           id: string
           last_name: string | null
+          stripe_customer_id: string | null
           updated_at: string
           user_id: string
           zip_code: string | null
@@ -268,6 +299,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           last_name?: string | null
+          stripe_customer_id?: string | null
           updated_at?: string
           user_id: string
           zip_code?: string | null
@@ -278,6 +310,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           last_name?: string | null
+          stripe_customer_id?: string | null
           updated_at?: string
           user_id?: string
           zip_code?: string | null
@@ -461,6 +494,30 @@ export type Database = {
         }
         Relationships: []
       }
+      stripe_test_fixtures: {
+        Row: {
+          created_at: string
+          stripe_account_id: string | null
+          stripe_customer_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          stripe_account_id?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          stripe_account_id?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -496,6 +553,54 @@ export type Database = {
       client_in_provider_territory: {
         Args: { client_user_id: string }
         Returns: boolean
+      }
+      booking_price_cents: {
+        Args: { service: string }
+        Returns: number
+      }
+      claim_booking_for_charge: {
+        Args: { p_booking_id: string; p_provider_id: string }
+        Returns: {
+          charge_amount_cents: number | null
+          charge_attempts: number | null
+          charge_destination: string | null
+          charge_error: string | null
+          charge_livemode: boolean | null
+          charged_at: string | null
+          client_user_id: string
+          completed_at: string | null
+          id: string
+          payment_intent_id: string | null
+          payment_status: string
+          price_cents: number | null
+          provider_user_id: string | null
+          scheduled_date: string
+          service: string
+          status: string
+        } | null
+      }
+      finalize_booking_charge: {
+        Args: {
+          p_amount_cents?: number
+          p_booking_id: string
+          p_destination?: string
+          p_error?: string
+          p_livemode?: boolean
+          p_payment_intent_id?: string
+          p_success: boolean
+        }
+        Returns: {
+          charge_amount_cents: number | null
+          charge_attempts: number | null
+          charge_destination: string | null
+          charge_livemode: boolean | null
+          charged_at: string | null
+          completed_at: string | null
+          id: string
+          payment_intent_id: string | null
+          payment_status: string
+          status: string
+        } | null
       }
       has_role: {
         Args: {

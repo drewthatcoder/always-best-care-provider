@@ -17,7 +17,7 @@ This does **not** change the franchise registration flow in `src/pages/Register.
 | `functions/create-account-link` | Stripe AccountLink. Settings always sends `origin` + absolute `/settings?connect=return\|refresh` URLs. Falls back to `PROVIDER_APP_URL` / `SITE_URL` / `APP_URL` / `https://easycare.live`. Returns Stripe’s `livemode`. |
 | `functions/sync-connect-status` | Auth'd provider → `accounts.retrieve` → write the four flags. Settings calls this on load (also when there is no account yet, so the LIVE/TEST badge can follow the platform key). |
 | `functions/stripe-connect-webhook` | Verifies `STRIPE_WEBHOOK_SECRET`. Accepts `account.updated` when `event.livemode` matches the secret key (`sk_live_` ↔ live events). |
-| `functions/charge-client` | Mobile BookingScreen charge. Same shared Stripe helper as Connect. `verify_jwt = false`. Optional destination; does not fail the charge if destination is missing. |
+| `functions/charge-client` | Mobile BookingScreen charge (legacy body, unchanged) plus provider `action: preview \| complete_and_charge`. `verify_jwt = false`. |
 | `functions/notify-provider-status` | Admin approve/reject → Resend. Approval includes Set up payouts steps, a CTA to `https://easycare.live/settings`, and a light reminder to return the Agency Subscriber Agreement to `dbarbee@abc-seniors.com` if it is not already on file. Rejection copy is unchanged. Uses `RESEND_API_KEY` (already in hosted secrets). |
 | `functions/submit-provider-application` | Register.tsx after paid signup. Emails the Agency Subscriber Agreement `.docx` to the new provider via Resend (`RESEND_API_KEY` already in hosted secrets). From: `CareConnect <onboarding@resend.dev>`. Frontend already inserts `provider_applications`; this function does not write the DB. |
 | `migrations/20260915214100_provider_connect_status.sql` | Adds nullable status columns. Does **not** re-add `stripe_account_id` (already live). |
@@ -102,6 +102,70 @@ supabase functions deploy submit-provider-application --project-ref uwgfitnpesgd
 ```
 
 Approval mail (`notify-provider-status`) only reminds providers to return the signed agreement if they have not already. Redeploy that function too if you change the reminder copy.
+
+## Mark complete & charge
+
+Provider jobs can be completed and charged from the server. The amount is `bookings.price_cents`, or `booking_price_cents(service)` when that is null (5500 cents for each of the first two comma-separated services, 4500 for each after). The client-supplied amount is ignored. The full amount is transferred to the provider's connected account, with no application fee. The legacy `charge-client` body (no `action`) is unchanged.
+
+The "Mark complete & charge" button is hidden unless `VITE_ENABLE_COMPLETE_AND_CHARGE=true`. Point the app at the test function with `VITE_CHARGE_FUNCTION=charge-client-test`. The scheduled-date `too_early` gate is not enforced yet.
+
+Card on file (mobile client JWT):
+
+| Function | Body | Returns |
+| --- | --- | --- |
+| `create-setup-intent` | none. Optional header `stripe-version`. When it is absent, the ephemeral key uses the server's pinned Stripe API version (`2024-06-20`). | `{ setupIntentClientSecret, ephemeralKey, customerId, publishableKey }` |
+| `set-default-payment-method` | `{ setupIntentId }` | `{ brand, last4, expMonth, expYear }` |
+| `get-payment-method` | none | `{ brand, last4, expMonth, expYear }` or `null` |
+
+`create-setup-intent` stores `profiles.stripe_customer_id` on every row for that user. Test variants (`*-test`) read and write Stripe ids only in `stripe_test_fixtures`.
+
+### Deploy order
+
+Do not flip `STRIPE_SECRET_KEY` to a test key. Do not put test `acct_` / `cus_` ids in `profiles` or `provider_profiles`.
+
+1. Apply `migrations/20261008120000_booking_complete_and_charge.sql` in the SQL editor after this PR is approved. Rollback: `migrations/rollback/20261008120000_booking_complete_and_charge.sql`.
+2. Set secrets (names only; paste values in the dashboard, never in git): `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_PUBLISHABLE_KEY`. Leave `STRIPE_SECRET_KEY` as it is. The QA allowlist is hardcoded. The full charge amount is transferred to the provider's connected account. There is no application fee.
+3. Deploy the test functions first and run the QA checklist before redeploying `charge-client`:
+
+```bash
+supabase functions deploy charge-client-test --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy create-setup-intent-test --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy set-default-payment-method-test --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy get-payment-method-test --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+```
+
+4. After QA, deploy the live functions. Redeploying `charge-client` replaces the function the store app calls on Approve; the legacy branch is unchanged, but deploy it at a quiet time.
+
+   **Do not deploy the non-test `create-setup-intent` until we confirm nothing still calls the already-deployed v16.** That live function was deployed from outside this repo with a different contract: request `{ customerId }`, response `{ clientSecret }`. This repo's function returns `{ setupIntentClientSecret, ephemeralKey, customerId, publishableKey }`. Deploying it would replace v16. Keep the function name. The `*-test` variant is safe to deploy.
+
+```bash
+supabase functions deploy charge-client --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy create-setup-intent --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy set-default-payment-method --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+supabase functions deploy get-payment-method --project-ref uwgfitnpesgdkiwtekcb --no-verify-jwt
+```
+
+5. Turn on `VITE_ENABLE_COMPLETE_AND_CHARGE` only after the migration, the live function deploy, and a Stripe check of existing approved bookings.
+
+### Test-mode QA checklist
+
+1. Confirm `STRIPE_TEST_SECRET_KEY` (test mode). Do not change `STRIPE_SECRET_KEY`.
+2. Deploy `charge-client-test` only. Do not redeploy `charge-client` until QA passes.
+3. Create test fixtures with the test key and store them in `stripe_test_fixtures`: a test customer for qa-client with `pm_card_visa` as the default, and a test Connect account for qa-provider with both `charges_enabled` and `payouts_enabled`.
+4. Run the provider app with `VITE_CHARGE_FUNCTION=charge-client-test` and `VITE_ENABLE_COMPLETE_AND_CHARGE=true`, signed in as qa-provider.
+5. Cases:
+   - (a) No card, before the client fixture, on booking `bc79ddc2`. Expect `no_card`. The booking stays approved.
+   - (b) Happy path: the dialog shows $55.00, the PaymentIntent succeeds with `livemode=false` and the test destination, the booking is completed, and the client is notified.
+   - (c) Idempotency: double-click, two tabs, and a curl replay. Exactly one PaymentIntent for that `booking_id`.
+   - (d) A completed job hides the button. A direct call returns `already_charged`.
+   - (e) Decline with `pm_card_chargeDeclined`, then visa. Attempt 2 succeeds.
+   - (f) `pm_card_authenticationRequired` returns `authentication_required`.
+   - (g) Wrong provider returns 403. (h) `pending_client` booking `ffa74566` returns 409. (i) Remove the account fixture and expect `provider_not_payable`.
+   - (j) As qa-provider, a direct update of `status` to `completed` or of a payment column is rejected.
+   - (k) The test function rejects a non-QA booking id and rejects an `sk_live_` key.
+   - (l) `bc79ddc2` is dated 2026-12-02. The `too_early` date gate is not enforced yet, so that booking can be charged. Use a booking dated today if you add the gate later.
+6. Live regression, without charging: after redeploying `charge-client`, send only negative legacy requests (missing `customerId` returns 400 `customerId is required`; a bad amount returns 400). A `complete_and_charge` request with the anon key returns 401.
+7. Before turning on the live button, check the non-QA approved bookings `61042b0f`, `4c5420b6`, and `c68c3c8f` in the live Stripe dashboard for an existing PaymentIntent with that `booking_id`.
 
 ## Out of scope
 

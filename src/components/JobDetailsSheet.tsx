@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Clock, AlertTriangle, X, ArrowLeft, MapPin, Phone, User, Calendar, Ruler, Weight, FileText, RefreshCw, Send, Trash2, CheckCircle2 } from 'lucide-react';
+import { Clock, AlertTriangle, X, ArrowLeft, MapPin, Phone, User, Calendar, Ruler, Weight, FileText, RefreshCw, Send, Trash2, CheckCircle2, CircleDollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -25,8 +25,10 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Job } from './JobCard';
-import { canConfirmShift, jobStatusLabel } from '@/lib/providerJobs';
+import { canCompleteAndCharge, canConfirmShift, jobStatusLabel } from '@/lib/providerJobs';
+import { formatCents, isCompleteAndChargeEnabled } from '@/lib/bookingCharge';
 import CallAlwaysBestCareButton from '@/components/CallAlwaysBestCareButton';
+import CompleteAndChargeDialog from '@/components/CompleteAndChargeDialog';
 
 interface JobDetailsSheetProps {
   job: Job | null;
@@ -34,6 +36,8 @@ interface JobDetailsSheetProps {
   onOpenChange: (open: boolean) => void;
   onDelete?: (jobId: string) => void;
   onConfirm?: (jobId: string) => void;
+  /** Reload lists after a charge. The sheet closes itself on success. */
+  onCompleted?: (jobId: string) => void;
 }
 
 const InfoRow = ({ icon: Icon, label, value }: { icon: any; label: string; value?: string | null }) => {
@@ -77,7 +81,7 @@ const formatSlotHour = (hour: number): string => {
   return `${display}:00 ${period}`;
 };
 
-const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDetailsSheetProps) => {
+const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm, onCompleted }: JobDetailsSheetProps) => {
   const [showProblemForm, setShowProblemForm] = useState(false);
   const [problemMessage, setProblemMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +90,7 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
   const [confirming, setConfirming] = useState(false);
   const [showTimeDialog, setShowTimeDialog] = useState(false);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('');
+  const [chargeOpen, setChargeOpen] = useState(false);
 
   // Generate 1-hour time slots from the booking's start/end time
   const timeSlots = useMemo(() => {
@@ -323,8 +328,32 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
                     Status: <span className="font-semibold">{jobStatusLabel(job.status)}</span>
                     {job.status === 'pending_client' && ' — waiting for the client to approve this shift.'}
                     {job.status === 'approved' && ' — the client approved this shift. The session is booked.'}
+                    {job.status === 'completed' && ' — this visit is complete.'}
                   </span>
                 </div>
+              )}
+              {job.paymentStatus === 'succeeded' && (
+                <div
+                  data-testid="job-payment-note"
+                  className="bg-white/10 rounded-xl p-3 text-sm text-white/90 flex items-center gap-2"
+                >
+                  <CircleDollarSign className="w-4 h-4 shrink-0" />
+                  <span>
+                    <span className="font-semibold">Paid</span>
+                    {typeof (job.chargeAmountCents ?? job.priceCents) === 'number'
+                      && ` — ${formatCents((job.chargeAmountCents ?? job.priceCents) as number)} charged to the client's card on file.`}
+                  </span>
+                </div>
+              )}
+              {isCompleteAndChargeEnabled() && canCompleteAndCharge(job.status) && (
+                <Button
+                  data-testid="mark-complete-charge"
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                  onClick={() => setChargeOpen(true)}
+                >
+                  <CircleDollarSign className="w-4 h-4 mr-2" />
+                  Mark complete & charge
+                </Button>
               )}
               {canConfirmShift(job.status) && (
                 <Button
@@ -411,6 +440,18 @@ const JobDetailsSheet = ({ job, open, onOpenChange, onDelete, onConfirm }: JobDe
           </div>
         </SheetContent>
       </Sheet>
+
+      <CompleteAndChargeDialog
+        job={job}
+        open={chargeOpen}
+        onOpenChange={setChargeOpen}
+        onCompleted={() => {
+          setChargeOpen(false);
+          onOpenChange(false);
+          onCompleted?.(job.id);
+        }}
+        onRefresh={() => onCompleted?.(job.id)}
+      />
 
       {/* Time Slot Selection Dialog */}
       <Dialog open={showTimeDialog} onOpenChange={setShowTimeDialog}>

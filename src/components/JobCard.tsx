@@ -1,6 +1,7 @@
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { jobStatusLabel } from '@/lib/providerJobs';
+import { formatCents } from '@/lib/bookingCharge';
+import { jobStatusLabel, paymentBadgeLabel } from '@/lib/providerJobs';
 
 export interface Job {
   id: string;
@@ -30,6 +31,10 @@ export interface Job {
   clientAdditionalInfo?: string;
   clientRecurringWeekly?: string;
   notes?: string;
+  scheduledDate?: string;
+  priceCents?: number | null;
+  chargeAmountCents?: number | null;
+  paymentStatus?: 'unpaid' | 'processing' | 'succeeded' | 'failed' | null;
 }
 
 interface JobCardProps {
@@ -60,6 +65,12 @@ const JobCard = ({ job, onClick }: JobCardProps) => {
   };
   // Open requests are already grouped under "Upcoming requests"; assigned jobs get an explicit badge.
   const showStatusBadge = job.status !== 'upcoming';
+  const paymentLabel = paymentBadgeLabel(job.paymentStatus);
+  const amountCents = job.paymentStatus === 'succeeded' && typeof job.chargeAmountCents === 'number'
+    ? job.chargeAmountCents
+    : typeof job.priceCents === 'number'
+      ? job.priceCents
+      : null;
 
   return (
     <div
@@ -109,6 +120,24 @@ const JobCard = ({ job, onClick }: JobCardProps) => {
             >
               {jobStatusLabel(job.status)}
             </span>
+          )}
+          {paymentLabel && (
+            <span
+              data-testid="payment-badge"
+              className={cn(
+                'inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
+                job.paymentStatus === 'failed'
+                  ? 'bg-destructive/15 text-destructive border-destructive/30'
+                  : 'bg-success/15 text-success border-success/30',
+              )}
+            >
+              {paymentLabel}
+            </span>
+          )}
+          {typeof amountCents === 'number' && amountCents > 0 && (
+            <p data-testid="job-amount" className="text-sm font-semibold text-foreground">
+              {formatCents(amountCents)}
+            </p>
           )}
           {(job.clientFirstName || job.clientLastName || job.clientName) && (
             <>
