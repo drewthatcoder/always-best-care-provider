@@ -24,8 +24,8 @@ if (!STRIPE_PUBLISHABLE_KEY) {
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const PRICE_IDS = {
-  monthly:     'price_1TIBHpCv6ZSrYUtDLRps2vzO',
-  'monthly-2': 'price_1TIBInCv6ZSrYUtDnnotfVFQ',
+  monthly:     'price_1TEIrfCv6ZSrYUtDsndS9YWK',
+  'monthly-2': 'price_1TEIsOCv6ZSrYUtD73YcE4ZS',
 };
 
 const ONBOARDING_PRICE_ID = 'price_1U30GlCv6ZSrYUtDiu049FtM';
